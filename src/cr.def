@@ -1,0 +1,5 @@
+EXPORTS
+	WinDbgExtensionDllInit
+	ExtensionApiVersion
+	help
+	dom
