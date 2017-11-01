@@ -18,7 +18,9 @@ OBJS=\
 	$(OBJDIR)\dllmain.obj\
 	$(OBJDIR)\object.obj\
 	$(OBJDIR)\peimage.obj\
-	$(OBJDIR)\blink.obj\
+	$(OBJDIR)\typeinfo.obj\
+	$(OBJDIR)\dom.obj\
+	$(OBJDIR)\layout.obj\
 
 LIBS=\
 

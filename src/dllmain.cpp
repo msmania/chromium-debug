@@ -51,6 +51,7 @@ VOID WinDbgExtensionDllInit(PWINDBG_EXTENSION_APIS lpExtensionApis,
 
 DECLARE_API(help) {
   dprintf("!dom <Node*>                    - Dump DOM tree\n"
+          "!lay <LayoutObject*>            - Dump Layout tree\n"
           "\n"
           "# Friendly info :)\n\n"
           "Symbol server:\n"

@@ -12,10 +12,6 @@ const char *TARGETINFO::engine() const {
   return engine_.c_str();
 }
 
-void Object::Reset(COREADDR addr) {
-  addr_ = addr;
-}
-
 TARGETINFO Object::targetinfo_;
 
 void Object::InitializeTargetInfo() {

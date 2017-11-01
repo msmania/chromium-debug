@@ -1,6 +1,28 @@
+#define LOAD_FIELD_OFFSET(FIELD) \
+  field_name = FIELD; \
+  if (GetFieldOffset(type.c_str(), field_name, &offset) == 0) { \
+    offsets_[field_name] = offset; \
+  } \
+  else { \
+    dprintf("ERR> Symbol not found: %s::%s\n", type.c_str(), field_name); \
+  }
+
+#define LOAD_MEMBER_POINTER(MEMBER) \
+  if (!ReadPointerEx(src, MEMBER)) { \
+    dprintf("ERR> Failed to load a pointer at %s\n", \
+            ptos(src, buf1, sizeof(buf1))); \
+  }
+
+#define LOAD_MEMBER_VALUE(MEMBER) \
+  if (!ReadValue(src, MEMBER)) { \
+    dprintf("ERR> Failed to load a value at %s\n", \
+            ptos(src, buf1, sizeof(buf1))); \
+  }
+
 typedef ULONG64 COREADDR;
 
 LPCSTR ptos(ULONG64 p, LPSTR s, ULONG len);
+const std::string &ResolveType(COREADDR addr);
 
 class CPEImage {
 private:
@@ -52,8 +74,6 @@ private:
 
 protected:
   COREADDR addr_;
-
-  void Reset(COREADDR addr);
 
 public:
   static void InitializeTargetInfo();
