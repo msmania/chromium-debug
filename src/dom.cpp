@@ -10,6 +10,90 @@
 
 namespace blink {
 
+class NodeRenderingData : public Object {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  static void LoadSymbols(LPCSTR module) {
+    std::string type = module;
+    type += "!blink::NodeRenderingData";
+
+    ULONG offset = 0;
+    const char *field_name = nullptr;
+
+    LOAD_FIELD_OFFSET("layout_object_");
+  }
+
+protected:
+  COREADDR layout_object_;
+
+public:
+  NodeRenderingData()
+    : layout_object_(0)
+  {}
+
+  COREADDR GetLayoutObject() const { return layout_object_; }
+
+  virtual void Load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      LoadSymbols(target().engine());
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    layout_object_ = 0;
+
+    src = addr + offsets_["layout_object_"];
+    LOAD_MEMBER_POINTER(layout_object_);
+  }
+};
+
+class NodeRareDataBase : public Object {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  static void LoadSymbols(LPCSTR module) {
+    std::string type = module;
+    type += "!blink::NodeRareDataBase";
+
+    ULONG offset = 0;
+    const char *field_name = nullptr;
+
+    LOAD_FIELD_OFFSET("node_layout_data_");
+  }
+
+protected:
+  COREADDR node_layout_data_;
+
+public:
+  NodeRareDataBase()
+    : node_layout_data_(0)
+  {}
+
+  NodeRenderingData GetNodeRenderingData() const {
+    NodeRenderingData data;
+    data.Load(node_layout_data_);
+    return data;
+  }
+
+  virtual void Load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      LoadSymbols(target().engine());
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    node_layout_data_ = 0;
+
+    src = addr + offsets_["node_layout_data_"];
+    LOAD_MEMBER_POINTER(node_layout_data_);
+  }
+};
+
 class Node : public Object {
 private:
   static std::map<std::string, ULONG> offsets_;
@@ -25,6 +109,7 @@ private:
     LOAD_FIELD_OFFSET("parent_or_shadow_host_node_");
     LOAD_FIELD_OFFSET("previous_");
     LOAD_FIELD_OFFSET("next_");
+    LOAD_FIELD_OFFSET("data_");
   }
 
   enum NodeFlags {
@@ -46,6 +131,7 @@ protected:
   COREADDR parent_or_shadow_host_node_;
   COREADDR previous_;
   COREADDR next_;
+  COREADDR data_;
 
 public:
   static std::unique_ptr<Node> CreateNode(COREADDR addr);
@@ -54,7 +140,8 @@ public:
     : node_flags_(kZero),
       parent_or_shadow_host_node_(0),
       previous_(0),
-      next_(0)
+      next_(0),
+      data_(0)
   {}
 
   bool GetFlag(NodeFlags mask) const { return node_flags_ & mask; }
@@ -63,7 +150,21 @@ public:
   bool IsTextNode() const { return GetFlag(kIsTextFlag); }
   bool IsHTMLElement() const { return GetFlag(kIsHTMLFlag); }
   bool IsSVGElement() const { return GetFlag(kIsSVGFlag); }
+  bool HasRareData() const { return GetFlag(kHasRareDataFlag); }
   COREADDR nextSibling() const { return next_; }
+
+  COREADDR GetLayoutObject() const {
+    if (HasRareData()) {
+      NodeRareDataBase data;
+      data.Load(data_);
+      return data.GetNodeRenderingData().GetLayoutObject();
+    }
+    else {
+      NodeRenderingData data;
+      data.Load(data_);
+      return data.GetLayoutObject();
+    }
+  }
 
   COREADDR Parent() const {
     return parent_or_shadow_host_node_;
@@ -97,6 +198,8 @@ public:
     LOAD_MEMBER_POINTER(previous_);
     src = addr + offsets_["next_"];
     LOAD_MEMBER_POINTER(next_);
+    src = addr + offsets_["data_"];
+    LOAD_MEMBER_POINTER(data_);
   }
 
   virtual void Dump(int &node_count, int depth) {
@@ -107,8 +210,14 @@ public:
        << ptos(addr_, buf1, sizeof(buf1))
        << " " << ResolveType(addr_)
        << " " << std::hex << std::setfill('0') << std::setw(8)
-       << node_flags_
-       << std::endl;
+       << node_flags_;
+
+    if (auto layout_object = GetLayoutObject()) {
+      ss << " " << ptos(layout_object, buf1, sizeof(buf1))
+         << " " << ResolveType(layout_object);
+    }
+
+    ss << std::endl;
     dprintf(ss.str().c_str());
     ++node_count;
   }
@@ -167,6 +276,8 @@ public:
   }
 };
 
+std::map<std::string, ULONG> NodeRenderingData::offsets_;
+std::map<std::string, ULONG> NodeRareDataBase::offsets_;
 std::map<std::string, ULONG> Node::offsets_;
 std::map<std::string, ULONG> ContainerNode::offsets_;
 
