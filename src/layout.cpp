@@ -142,10 +142,54 @@ public:
 };
 
 class LayoutText : public LayoutObject {};
+class LayoutWordBreak : public LayoutText {};
 class LayoutBoxModelObject : public LayoutObject {};
 class LayoutBox : public LayoutBoxModelObject {};
-class LayoutInline : public LayoutBoxModelObject {};
 class LayoutListMarker : public LayoutBox {};
+class LayoutReplaced : public LayoutBox {};
+class LayoutImage : public LayoutReplaced {};
+
+class LayoutInline : public LayoutBoxModelObject {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  static void LoadSymbols(LPCSTR module) {
+    std::string type = module;
+    type += "!blink::LayoutInline";
+
+    ULONG offset = 0;
+    const char *field_name = nullptr;
+
+    LOAD_FIELD_OFFSET("children_");
+  }
+
+protected:
+  LayoutObjectChildList children_;
+
+public:
+  LayoutInline()
+  {}
+
+  virtual void Load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      LoadSymbols(target().engine());
+    }
+
+    LayoutBoxModelObject::Load(addr);
+    children_.Load(addr + offsets_["children_"]);
+  }
+
+  virtual void Dump(int &node_count, int depth) {
+    LayoutBoxModelObject::Dump(node_count, depth);
+
+    COREADDR child_addr = children_.FirstChild();
+    while (child_addr) {
+      auto child = CreateNode(child_addr);
+      child->Dump(node_count, depth + 1);
+      child_addr = child->NextSibling();
+    }
+  }
+};
 
 class LayoutBlock : public LayoutBox {
 private:
@@ -192,10 +236,64 @@ public:
 class LayoutBlockFlow : public LayoutBlock {};
 class LayoutView : public LayoutBlockFlow {};
 class LayoutListItem : public LayoutBlockFlow {};
+class LayoutTable : public LayoutBlock {};
+class LayoutTableCell : public LayoutBlockFlow {};
+class LayoutTextControlInnerEditor : public LayoutBlockFlow {};
+class LayoutTextControl : public LayoutBlockFlow {};
+class LayoutTextControlMultiLine : public LayoutTextControl {};
+class LayoutTextControlSingleLine : public LayoutTextControl {};
 
-std::map<std::string, ULONG> LayoutObjectChildList::offsets_;
-std::map<std::string, ULONG> LayoutObject::offsets_;
+class LayoutTableBoxComponent : public LayoutBox {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  static void LoadSymbols(LPCSTR module) {
+    std::string type = module;
+    type += "!blink::LayoutTableBoxComponent";
+
+    ULONG offset = 0;
+    const char *field_name = nullptr;
+
+    LOAD_FIELD_OFFSET("children_");
+  }
+
+protected:
+  LayoutObjectChildList children_;
+
+public:
+  LayoutTableBoxComponent()
+  {}
+
+  virtual void Load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      LoadSymbols(target().engine());
+    }
+
+    LayoutBox::Load(addr);
+    children_.Load(addr + offsets_["children_"]);
+  }
+
+  virtual void Dump(int &node_count, int depth) {
+    LayoutBox::Dump(node_count, depth);
+
+    COREADDR child_addr = children_.FirstChild();
+    while (child_addr) {
+      auto child = CreateNode(child_addr);
+      child->Dump(node_count, depth + 1);
+      child_addr = child->NextSibling();
+    }
+  }
+};
+
+class LayoutTableCol : public LayoutTableBoxComponent {};
+class LayoutTableRow : public LayoutTableBoxComponent {};
+class LayoutTableSection : public LayoutTableBoxComponent {};
+
 std::map<std::string, ULONG> LayoutBlock::offsets_;
+std::map<std::string, ULONG> LayoutInline::offsets_;
+std::map<std::string, ULONG> LayoutObject::offsets_;
+std::map<std::string, ULONG> LayoutObjectChildList::offsets_;
+std::map<std::string, ULONG> LayoutTableBoxComponent::offsets_;
 
 #define ADD_CTOR(BASE, KEY, CLASS) \
   ctors[#KEY] = []() -> BASE* {return new CLASS();}
@@ -203,20 +301,40 @@ std::map<std::string, ULONG> LayoutBlock::offsets_;
 std::unique_ptr<LayoutObject> LayoutObject::CreateNode(COREADDR addr) {
   static std::map<std::string, LayoutObject*(*)()> ctors;
   if (ctors.size() == 0) {
-    ADD_CTOR(LayoutObject, blink::LayoutText,
-                           blink::LayoutText);
-    ADD_CTOR(LayoutObject, blink::LayoutInline,
-                           blink::LayoutInline);
-    ADD_CTOR(LayoutObject, blink::LayoutListMarker,
-                           blink::LayoutListMarker);
     ADD_CTOR(LayoutObject, blink::LayoutBlock,
                            blink::LayoutBlock);
     ADD_CTOR(LayoutObject, blink::LayoutBlockFlow,
                            blink::LayoutBlockFlow);
-    ADD_CTOR(LayoutObject, blink::LayoutView,
-                           blink::LayoutView);
+    ADD_CTOR(LayoutObject, blink::LayoutImage,
+                           blink::LayoutImage);
+    ADD_CTOR(LayoutObject, blink::LayoutInline,
+                           blink::LayoutInline);
     ADD_CTOR(LayoutObject, blink::LayoutListItem,
                            blink::LayoutListItem);
+    ADD_CTOR(LayoutObject, blink::LayoutListMarker,
+                           blink::LayoutListMarker);
+    ADD_CTOR(LayoutObject, blink::LayoutTable,
+                           blink::LayoutTable);
+    ADD_CTOR(LayoutObject, blink::LayoutTableCell,
+                           blink::LayoutTableCell);
+    ADD_CTOR(LayoutObject, blink::LayoutTableCol,
+                           blink::LayoutTableCol);
+    ADD_CTOR(LayoutObject, blink::LayoutTableRow,
+                           blink::LayoutTableRow);
+    ADD_CTOR(LayoutObject, blink::LayoutTableSection,
+                           blink::LayoutTableSection);
+    ADD_CTOR(LayoutObject, blink::LayoutText,
+                           blink::LayoutText);
+    ADD_CTOR(LayoutObject, blink::LayoutTextControlInnerEditor,
+                           blink::LayoutTextControlInnerEditor);
+    ADD_CTOR(LayoutObject, blink::LayoutTextControlMultiLine,
+                           blink::LayoutTextControlMultiLine);
+    ADD_CTOR(LayoutObject, blink::LayoutTextControlSingleLine,
+                           blink::LayoutTextControlSingleLine);
+    ADD_CTOR(LayoutObject, blink::LayoutView,
+                           blink::LayoutView);
+    ADD_CTOR(LayoutObject, blink::LayoutWordBreak,
+                           blink::LayoutWordBreak);
   }
 
   LayoutObject *p = nullptr;
