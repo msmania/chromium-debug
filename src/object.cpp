@@ -37,7 +37,7 @@ void Object::InitializeTargetInfo() {
     targetinfo_.version_ = HIWORD(ProdMS);
     targetinfo_.buildnum_ = HIWORD(FileLS);
 
-    dprintf("Target Engine = %d.%d\n",
+    dprintf("Target Engine = %d.%d\n\n",
             targetinfo_.version_,
             targetinfo_.buildnum_);
 

@@ -20,6 +20,7 @@ OBJS=\
 	$(OBJDIR)\layout.obj\
 	$(OBJDIR)\object.obj\
 	$(OBJDIR)\peimage.obj\
+	$(OBJDIR)\threadstate.obj\
 	$(OBJDIR)\typeinfo.obj\
 
 LIBS=\
