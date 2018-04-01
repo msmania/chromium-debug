@@ -301,9 +301,6 @@ std::map<std::string, ULONG> LayoutObject::offsets_;
 std::map<std::string, ULONG> LayoutObjectChildList::offsets_;
 std::map<std::string, ULONG> LayoutTableBoxComponent::offsets_;
 
-#define ADD_CTOR(BASE, KEY, CLASS) \
-  ctors[#KEY] = []() -> BASE* {return new CLASS();}
-
 std::unique_ptr<LayoutObject> LayoutObject::CreateNode(COREADDR addr) {
   static std::map<std::string, LayoutObject*(*)()> ctors;
   if (ctors.size() == 0) {
@@ -387,7 +384,7 @@ DECLARE_API(lay) {
       node.Load(GetExpression(token));
 
       int node_count = 0;
-      auto root = blink::LayoutObject::CreateNode(node.GetRoot());
+      auto root = blink::LayoutObject::CreateNode(node.GetRoot().addr());
       root->Dump(node_count, 0);
     }
   }

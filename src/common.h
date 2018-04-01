@@ -19,9 +19,13 @@
             ptos(src, buf1, sizeof(buf1))); \
   }
 
+#define ADD_CTOR(BASE, KEY, CLASS) \
+  ctors[#KEY] = []() -> BASE* {return new CLASS();}
+
 typedef ULONG64 COREADDR;
 
 LPCSTR ptos(ULONG64 p, LPSTR s, ULONG len);
+FIELD_INFO GetFieldInfo(IN LPCSTR Type, IN LPCSTR Field);
 const std::string &ResolveType(COREADDR addr);
 
 class CPEImage {
@@ -91,5 +95,5 @@ public:
   }
 
   Object();
-  operator COREADDR() const;
+  COREADDR addr() const { return addr_; }
 };

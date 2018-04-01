@@ -19,6 +19,7 @@ OBJS=\
 	$(OBJDIR)\dom.obj\
 	$(OBJDIR)\layout.obj\
 	$(OBJDIR)\object.obj\
+	$(OBJDIR)\oilpan.obj\
 	$(OBJDIR)\peimage.obj\
 	$(OBJDIR)\threadstate.obj\
 	$(OBJDIR)\typeinfo.obj\

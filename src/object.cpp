@@ -71,7 +71,3 @@ Object::Object()
   : addr_(0) {
   InitializeTargetInfo();
 }
-
-Object::operator COREADDR() const {
-  return addr_;
-}

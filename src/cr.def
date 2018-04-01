@@ -2,6 +2,8 @@ EXPORTS
 	WinDbgExtensionDllInit
 	ExtensionApiVersion
 	help
+	arena
 	dom
+	heap
 	lay
 	ts

@@ -303,7 +303,7 @@ DECLARE_API(dom) {
       node.Load(GetExpression(token));
 
       int node_count = 0;
-      auto root = blink::Node::CreateNode(node.GetRoot());
+      auto root = blink::Node::CreateNode(node.GetRoot().addr());
       root->Dump(node_count, 0);
     }
   }
