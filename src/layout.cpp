@@ -142,12 +142,15 @@ public:
 };
 
 class LayoutText : public LayoutObject {};
+class LayoutTextFragment : public LayoutText {};
 class LayoutWordBreak : public LayoutText {};
 class LayoutBoxModelObject : public LayoutObject {};
 class LayoutBox : public LayoutBoxModelObject {};
 class LayoutListMarker : public LayoutBox {};
 class LayoutReplaced : public LayoutBox {};
 class LayoutImage : public LayoutReplaced {};
+class LayoutEmbeddedContent : public LayoutReplaced {};
+class LayoutIFrame : public LayoutEmbeddedContent {};
 
 class LayoutInline : public LayoutBoxModelObject {
 private:
@@ -242,6 +245,9 @@ class LayoutTextControlInnerEditor : public LayoutBlockFlow {};
 class LayoutTextControl : public LayoutBlockFlow {};
 class LayoutTextControlMultiLine : public LayoutTextControl {};
 class LayoutTextControlSingleLine : public LayoutTextControl {};
+class LayoutFlexibleBox : public LayoutBlock {};
+class LayoutButton : public LayoutFlexibleBox {};
+class LayoutFileUploadControl : public LayoutBlockFlow {};
 
 class LayoutTableBoxComponent : public LayoutBox {
 private:
@@ -305,6 +311,14 @@ std::unique_ptr<LayoutObject> LayoutObject::CreateNode(COREADDR addr) {
                            blink::LayoutBlock);
     ADD_CTOR(LayoutObject, blink::LayoutBlockFlow,
                            blink::LayoutBlockFlow);
+    ADD_CTOR(LayoutObject, blink::LayoutButton,
+                           blink::LayoutButton);
+    ADD_CTOR(LayoutObject, blink::LayoutFileUploadControl,
+                           blink::LayoutFileUploadControl);
+    ADD_CTOR(LayoutObject, blink::LayoutFlexibleBox,
+                           blink::LayoutFlexibleBox);
+    ADD_CTOR(LayoutObject, blink::LayoutIFrame,
+                           blink::LayoutIFrame);
     ADD_CTOR(LayoutObject, blink::LayoutImage,
                            blink::LayoutImage);
     ADD_CTOR(LayoutObject, blink::LayoutInline,
@@ -331,6 +345,8 @@ std::unique_ptr<LayoutObject> LayoutObject::CreateNode(COREADDR addr) {
                            blink::LayoutTextControlMultiLine);
     ADD_CTOR(LayoutObject, blink::LayoutTextControlSingleLine,
                            blink::LayoutTextControlSingleLine);
+    ADD_CTOR(LayoutObject, blink::LayoutTextFragment,
+                           blink::LayoutTextFragment);
     ADD_CTOR(LayoutObject, blink::LayoutView,
                            blink::LayoutView);
     ADD_CTOR(LayoutObject, blink::LayoutWordBreak,
