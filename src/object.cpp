@@ -14,6 +14,12 @@ const char *TARGETINFO::engine() const {
 
 TARGETINFO Object::targetinfo_;
 
+COREADDR Object::get_expression(const char *symbol) {
+  std::string t(target().engine());
+  t += symbol;
+  return GetExpression(t.c_str());
+}
+
 void Object::InitializeTargetInfo() {
   if (targetinfo_.engine_.size() > 0) return;
 
@@ -65,6 +71,12 @@ bool Object::ReadPointerEx(ULONG64 address, ULONG64 &pointer) {
     }
   }
   return false;
+}
+
+COREADDR Object::deref(ULONG64 address) {
+  COREADDR value;
+  ReadPointerEx(address, value);
+  return value;
 }
 
 Object::Object()

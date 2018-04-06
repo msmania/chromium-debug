@@ -20,6 +20,7 @@ OBJS=\
 	$(OBJDIR)\layout.obj\
 	$(OBJDIR)\object.obj\
 	$(OBJDIR)\oilpan.obj\
+	$(OBJDIR)\partitions.obj\
 	$(OBJDIR)\peimage.obj\
 	$(OBJDIR)\threadstate.obj\
 	$(OBJDIR)\typeinfo.obj\
@@ -37,6 +38,7 @@ CFLAGS=\
 	/EHsc\
 	/W4\
 	/wd4100\
+	/D_CRT_SECURE_NO_WARNINGS\
 
 LFLAGS=\
 	/NOLOGO\

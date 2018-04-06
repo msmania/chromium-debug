@@ -80,9 +80,11 @@ protected:
   COREADDR addr_;
 
 public:
+  static COREADDR get_expression(const char *symbol);
   static void InitializeTargetInfo();
   static const TARGETINFO &target();
   static bool ReadPointerEx(ULONG64 address, ULONG64 &pointer);
+  static COREADDR deref(ULONG64 address);
 
   template<typename T>
   static bool ReadValue(ULONG64 address, T &pointer) {

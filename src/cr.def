@@ -2,8 +2,15 @@ EXPORTS
 	WinDbgExtensionDllInit
 	ExtensionApiVersion
 	help
+	array_buffer_allocator
 	arena
+	bucket
+	buffer_allocator
 	dom
+	fast_malloc_allocator
 	heap
 	lay
+	layout_allocator
+	page
+	slot
 	ts
