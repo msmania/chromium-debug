@@ -232,7 +232,6 @@ public:
       if (field.size > 0) {
         offsets_["arenas_"] = field.FieldOffset;
         arena_count_ = field.size / pointer_size;
-        arenas_.resize(arena_count_);
       }
     }
 
@@ -241,11 +240,17 @@ public:
 
     addr_ = addr;
 
-    src = addr_ + offsets_["arenas_"];
-    for (auto &arena : arenas_) {
-      LOAD_MEMBER_POINTER(addr);
-      arena = addr;
-      src += pointer_size;
+    if (addr_) {
+      arenas_.resize(arena_count_);
+      src = addr_ + offsets_["arenas_"];
+      for (auto &arena : arenas_) {
+        LOAD_MEMBER_POINTER(addr);
+        arena = addr;
+        src += pointer_size;
+      }
+    }
+    else {
+      arenas_.clear();
     }
   }
 
