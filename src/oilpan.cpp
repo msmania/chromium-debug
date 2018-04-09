@@ -126,25 +126,24 @@ public:
     first_page_.reset(BasePage::create(addr));
   }
 
-  virtual void dump() const {
+  virtual void dump(std::ostream &s) const {
     char buf1[20];
     char buf2[20];
-    std::stringstream ss;
-    ss << ResolveType(addr_)
-       << " " << ptos(addr_, buf1, sizeof(buf1)) << std::endl;
+    s << ResolveType(addr_)
+      << " " << ptos(addr_, buf1, sizeof(buf1)) << std::endl;
+
     for (BasePage *page = first_page_.get();
          ;
          page = page->Next()) {
       auto addr = page->addr();
       if (!addr) break;
       auto limit = addr + page->size();
-      ss << "  <- " << page->type()
-         << " " << ptos(addr, buf1, sizeof(buf1))
-         << " - " << ptos(limit, buf2, sizeof(buf2))
-         << (is_current_page(addr, limit) ? " #" : "")
-         << std::endl;
+      s << "  <- " << page->type()
+        << " " << ptos(addr, buf1, sizeof(buf1))
+        << " - " << ptos(limit, buf2, sizeof(buf2))
+        << (is_current_page(addr, limit) ? " #" : "")
+        << std::endl;
     }
-    dprintf(ss.str().c_str());
   }
 };
 
@@ -254,16 +253,14 @@ public:
     }
   }
 
-  void dump() const {
+  void dump(std::ostream &s) const {
     char buf1[20];
-    std::stringstream ss;
     for (size_t i = 0; i < arenas_.size(); ++i) {
-      ss << "arena[" << i << "] "
-         << ResolveType(arenas_[i])
-         << " " << ptos(COREADDR(arenas_[i]), buf1, sizeof(buf1))
-         << std::endl;
+      s << "arena[" << i << "] "
+        << ResolveType(arenas_[i])
+        << " " << ptos(COREADDR(arenas_[i]), buf1, sizeof(buf1))
+        << std::endl;
     }
-    dprintf(ss.str().c_str());
   }
 };
 
@@ -276,16 +273,7 @@ int ThreadHeap::arena_count_ = 0;
 }
 
 DECLARE_API(heap) {
-  const char delim[] = " ";
-  char args_copy[1024];
-  if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
-    char *next_token = nullptr;
-    if (auto token = strtok_s(args_copy, delim, &next_token)) {
-      blink::ThreadHeap th;
-      th.load(GetExpression(token));
-      th.dump();
-    }
-  }
+  dump_arg<blink::ThreadHeap>(args);
 }
 
 DECLARE_API(arena) {
@@ -294,8 +282,12 @@ DECLARE_API(arena) {
   if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
     char *next_token = nullptr;
     if (auto token = strtok_s(args_copy, delim, &next_token)) {
-      std::unique_ptr<blink::BaseArena> arena(blink::BaseArena::create(GetExpression(token)));
-      arena->dump();
+      Object global_initializer;
+      std::unique_ptr<blink::BaseArena> arena(
+        blink::BaseArena::create(GetExpression(token)));
+      std::stringstream s;
+      arena->dump(s);
+      dprintf(s.str().c_str());
     }
   }
 }
