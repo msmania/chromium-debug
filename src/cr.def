@@ -6,6 +6,7 @@ EXPORTS
 	arena
 	bucket
 	buffer_allocator
+	chunk
 	dom
 	fast_malloc_allocator
 	heap

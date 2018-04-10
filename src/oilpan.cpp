@@ -11,8 +11,15 @@
 
 namespace blink {
 
-const size_t kBlinkPageSizeLog2 = 17;
-const size_t kBlinkPageSize = 1 << kBlinkPageSizeLog2;
+constexpr size_t kBlinkPageSizeLog2 = 17;
+constexpr size_t kBlinkPageSize = 1 << kBlinkPageSizeLog2;
+constexpr size_t kHeaderWrapperMarkBitMask = 1u << kBlinkPageSizeLog2;
+constexpr size_t kHeaderGCInfoIndexShift = kBlinkPageSizeLog2 + 1;
+constexpr size_t kHeaderGCInfoIndexMask = (static_cast<size_t>((1 << 14) - 1))
+                                          << kHeaderGCInfoIndexShift;
+constexpr size_t kHeaderSizeMask = (static_cast<size_t>((1 << 14) - 1)) << 3;
+constexpr size_t kHeaderMarkBitMask = 1;
+constexpr size_t kHeaderFreedBitMask = 2;
 
 class BasePage : public Object {
 private:
@@ -130,7 +137,8 @@ public:
     char buf1[20];
     char buf2[20];
     s << ResolveType(addr_)
-      << " " << ptos(addr_, buf1, sizeof(buf1)) << std::endl;
+      << ' ' << ptos(addr_, buf1, sizeof(buf1))
+      << "\npage chain:\n";
 
     for (BasePage *page = first_page_.get();
          ;
@@ -138,11 +146,167 @@ public:
       auto addr = page->addr();
       if (!addr) break;
       auto limit = addr + page->size();
-      s << "  <- " << page->type()
-        << " " << ptos(addr, buf1, sizeof(buf1))
+      s << page->type()
+        << ' ' << ptos(addr, buf1, sizeof(buf1))
         << " - " << ptos(limit, buf2, sizeof(buf2))
         << (is_current_page(addr, limit) ? " #" : "")
         << std::endl;
+    }
+  }
+};
+
+class HeapObjectHeader : public Object {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  uint32_t encoded_;
+
+public:
+  HeapObjectHeader() : encoded_(0) {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::HeapObjectHeader";
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+      LOAD_FIELD_OFFSET("encoded_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr_) {
+      src = addr_ + offsets_["encoded_"];
+      LOAD_MEMBER_VALUE(encoded_);
+    }
+    else {
+      encoded_ = 0;
+    }
+  }
+
+  virtual void dump(std::ostream &s) const {
+    s << "Size:         " << static_cast<uint32_t>(size()) << std::endl
+      << "GCinfo index: " << static_cast<uint32_t>(GcInfoIndex()) << std::endl
+      << "Free:         " << (IsFree() ? 'Y' : 'N') << std::endl
+      << "Mark:         " << (IsMarked() ? 'Y' : 'N') << std::endl
+      << "DOM mark:     " << (IsWrapperHeaderMarked() ? 'Y' : 'N') << std::endl;
+  }
+
+  size_t GcInfoIndex() const {
+    return (encoded_ & kHeaderGCInfoIndexMask) >> kHeaderGCInfoIndexShift;
+  }
+
+  bool IsWrapperHeaderMarked() const {
+    return encoded_ & kHeaderWrapperMarkBitMask;
+  }
+
+  size_t size() const {
+    return encoded_ & kHeaderSizeMask;
+  }
+
+  bool IsFree() const {
+    return encoded_ & kHeaderFreedBitMask;
+  }
+
+  bool IsMarked() const {
+    return encoded_ & kHeaderMarkBitMask;
+  }
+};
+
+class FreeListEntry final : public HeapObjectHeader {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  COREADDR next_;
+
+public:
+  FreeListEntry() : next_(0) {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::FreeListEntry";
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+      LOAD_FIELD_OFFSET("next_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    HeapObjectHeader::load(addr);
+    if (addr_) {
+      src = addr_ + offsets_["next_"];
+      LOAD_MEMBER_POINTER(next_);
+    }
+    else {
+      next_ = 0;
+    }
+  }
+
+  COREADDR Next() const { return next_; }
+};
+
+class FreeList : public Object {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  COREADDR free_lists_[kBlinkPageSizeLog2];
+
+public:
+  FreeList() : free_lists_{} {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::FreeList";
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+      LOAD_FIELD_OFFSET("free_lists_");
+    }
+
+    const int pointer_size = target().is64bit_ ? 8 : 4;
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr_) {
+      src = addr + offsets_["free_lists_"];
+      for (int i = 0; i < kBlinkPageSizeLog2; ++i) {
+        LOAD_MEMBER_POINTER(free_lists_[i]);
+        src += pointer_size;
+      }
+    }
+    else {
+      memset(free_lists_, 0, sizeof(free_lists_));
+    }
+  }
+
+  virtual void dump(std::ostream &s) const {
+    char buf1[20];
+    for (int i = 0; i < kBlinkPageSizeLog2; ++i) {
+      if (free_lists_[i]) {
+        s << std::setw(3) << i;
+        int count = 0;
+        FreeListEntry entry;
+        for (auto p = free_lists_[i];
+             p;
+             p = entry.Next(), ++count) {
+          if (count == 0)
+            s << ' ';
+          else if ((count & 3) == 0)
+            s << "    ";
+          else
+            s << ' ';
+          entry.load(p);
+          s << ptos(p, buf1, sizeof(buf1)) << ' ' << entry.size();
+          if ((count & 3) == 3 && entry.Next())
+            s << std::endl;
+        }
+        s << std::endl;
+      }
     }
   }
 };
@@ -151,6 +315,7 @@ class NormalPageArena : public BaseArena {
 private:
   static std::map<std::string, ULONG> offsets_;
 
+  FreeList free_list_;
   COREADDR current_allocation_point_;
 
 public:
@@ -162,6 +327,7 @@ public:
       type += "!blink::NormalPageArena";
       ULONG offset = 0;
       const char *field_name = nullptr;
+      LOAD_FIELD_OFFSET("free_list_");
       LOAD_FIELD_OFFSET("current_allocation_point_");
     }
 
@@ -169,9 +335,21 @@ public:
     COREADDR src = 0;
 
     BaseArena::load(addr);
+    if (addr_) {
+      src = addr + offsets_["current_allocation_point_"];
+      LOAD_MEMBER_POINTER(current_allocation_point_);
+      free_list_.load(addr + offsets_["free_list_"]);
+    }
+    else {
+      free_list_.load(0);
+      current_allocation_point_ = 0;
+    }
+  }
 
-    src = addr + offsets_["current_allocation_point_"];
-    LOAD_MEMBER_POINTER(current_allocation_point_);
+  virtual void dump(std::ostream &s) const {
+    BaseArena::dump(s);
+    s << "free chunks:\n";
+    free_list_.dump(s);
   }
 
   bool is_current_page(COREADDR lower, COREADDR upper) const {
@@ -258,12 +436,15 @@ public:
     for (size_t i = 0; i < arenas_.size(); ++i) {
       s << "arena[" << i << "] "
         << ResolveType(arenas_[i])
-        << " " << ptos(COREADDR(arenas_[i]), buf1, sizeof(buf1))
+        << ' ' << ptos(COREADDR(arenas_[i]), buf1, sizeof(buf1))
         << std::endl;
     }
   }
 };
 
+std::map<std::string, ULONG> HeapObjectHeader::offsets_;
+std::map<std::string, ULONG> FreeListEntry::offsets_;
+std::map<std::string, ULONG> FreeList::offsets_;
 std::map<std::string, ULONG> BasePage::offsets_;
 std::map<std::string, ULONG> BaseArena::offsets_;
 std::map<std::string, ULONG> NormalPageArena::offsets_;
@@ -274,6 +455,10 @@ int ThreadHeap::arena_count_ = 0;
 
 DECLARE_API(heap) {
   dump_arg<blink::ThreadHeap>(args);
+}
+
+DECLARE_API(chunk) {
+  dump_arg<blink::HeapObjectHeader>(args);
 }
 
 DECLARE_API(arena) {
