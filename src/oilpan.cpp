@@ -321,7 +321,7 @@ public:
 
     addr_ = addr;
     if (addr_) {
-      src = addr + offsets_["free_lists_"];
+      src = addr_ + offsets_["free_lists_"];
       for (int i = 0; i < kBlinkPageSizeLog2; ++i) {
         LOAD_MEMBER_POINTER(free_lists_[i]);
         src += pointer_size;
@@ -384,9 +384,9 @@ public:
 
     BaseArena::load(addr);
     if (addr_) {
-      src = addr + offsets_["current_allocation_point_"];
+      src = addr_ + offsets_["current_allocation_point_"];
       LOAD_MEMBER_POINTER(current_allocation_point_);
-      free_list_.load(addr + offsets_["free_list_"]);
+      free_list_.load(addr_ + offsets_["free_list_"]);
     }
     else {
       free_list_.load(0);
@@ -438,11 +438,197 @@ BaseArena *BaseArena::create(COREADDR addr) {
   return p;
 }
 
+class MemoryRegion : public Object {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  COREADDR base_;
+  uint64_t size_;
+
+public:
+  MemoryRegion() : base_(0), size_(0) {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::MemoryRegion";
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+      LOAD_FIELD_OFFSET("base_");
+      LOAD_FIELD_OFFSET("size_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr_) {
+      src = addr_ + offsets_["base_"];
+      LOAD_MEMBER_POINTER(base_);
+      src = addr_ + offsets_["size_"];
+      LOAD_MEMBER_VALUE(size_);
+    }
+    else {
+      base_ = size_ = 0;
+    }
+  }
+
+  COREADDR Base() const { return base_; }
+  uint64_t size() const { return size_; }
+};
+
+class PageMemoryRegion : public MemoryRegion {};
+
+class PageMemory : public Object {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  MemoryRegion reserved_;
+  MemoryRegion writable_;
+
+public:
+  PageMemory() {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::PageMemory";
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+      LOAD_FIELD_OFFSET("reserved_");
+      LOAD_FIELD_OFFSET("writable_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr_) {
+      src = addr_ + offsets_["reserved_"];
+      LOAD_MEMBER_POINTER(addr);
+      reserved_.load(addr);
+      writable_.load(addr_ + offsets_["writable_"]);
+    }
+    else {
+      reserved_.load(0);
+      writable_.load(0);
+    }
+  }
+
+  void dump(std::ostream &s) const {
+    char buf1[20];
+    char buf2[20];
+    s << ptos(reserved_.Base(), buf1, sizeof(buf1)) << ' '
+      << static_cast<uint32_t>(reserved_.size()) << ' '
+      << ptos(writable_.Base(), buf2, sizeof(buf2)) << ' '
+      << static_cast<uint32_t>(writable_.size())
+      << std::endl;
+  }
+};
+
+class PagePool : public Object {
+private:
+  std::vector<COREADDR> pool_;
+
+public:
+  struct PoolEntry : public Object {
+    static std::map<std::string, ULONG> offsets_;
+
+    PageMemory data;
+    COREADDR next;
+
+    PoolEntry() : next(0) {}
+
+    void load(COREADDR addr) {
+      const int pointer_size = target().is64bit_ ? 8 : 4;
+      if (offsets_.size() == 0) {
+        std::string type(target().engine());
+        type += "!blink::PagePool::PoolEntry";
+
+        ULONG offset = 0;
+        const char *field_name = nullptr;
+        LOAD_FIELD_OFFSET("data");
+        LOAD_FIELD_OFFSET("next");
+      }
+
+      char buf1[20];
+      COREADDR src = 0;
+
+      addr_ = addr;
+      if (addr_) {
+        src = addr_ + offsets_["data"];
+        LOAD_MEMBER_POINTER(addr);
+        data.load(addr);
+        src = addr_ + offsets_["next"];
+        LOAD_MEMBER_POINTER(next);
+      }
+      else {
+        data.load(0);
+        next = 0;
+      }
+    }
+
+    void dump(std::ostream &s) const {
+      s << "blink::PagePool::PoolEntry chain:" << std::endl;
+      char buf1[20];
+      int count = 0;
+      PoolEntry entry;
+      for (COREADDR p = addr_; p; p = entry.next, ++count) {
+        entry.load(p);
+        s << ptos(p, buf1, sizeof(buf1)) << ' ';
+        entry.data.dump(s);
+      }
+    }
+  };
+
+  PagePool() {}
+
+  void load(COREADDR addr, int arena_count) {
+    // Assuming pool_ is the only member in PagePool for simplicity
+
+    const int pointer_size = target().is64bit_ ? 8 : 4;
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr_) {
+      pool_.resize(arena_count);
+      src = addr_;
+      for (auto &it : pool_) {
+        LOAD_MEMBER_POINTER(addr);
+        it = addr;
+        src += pointer_size;
+      }
+    }
+    else {
+      pool_.clear();
+    }
+  }
+
+  void dump(std::ostream &s) const {
+    char buf1[20];
+    for (size_t i = 0; i < pool_.size(); ++i) {
+      if (pool_[i]) {
+        s << std::setw(3) << i
+          << " blink::PagePool::PoolEntry "
+          << ptos(pool_[i], buf1, sizeof(buf1));
+
+        PoolEntry entry;
+        int count = 0;
+        for (COREADDR p = pool_[i]; p; p = entry.next, ++count)
+          entry.load(p);
+        s << ' ' << count << std::endl;
+      }
+    }
+  }
+};
+
 class ThreadHeap : public Object {
 private:
   static std::map<std::string, ULONG> offsets_;
   static int arena_count_;
 
+  PagePool free_page_pool_;
   std::vector<COREADDR> arenas_;
 
 public:
@@ -451,9 +637,15 @@ public:
   void load(COREADDR addr) {
     const int pointer_size = target().is64bit_ ? 8 : 4;
     if (offsets_.size() == 0) {
-      std::string ts(target().engine());
-      ts += "!blink::ThreadHeap";
-      auto field = GetFieldInfo(ts.c_str(), "arenas_");
+      std::string type(target().engine());
+      type += "!blink::ThreadHeap";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+
+      LOAD_FIELD_OFFSET("free_page_pool_");
+
+      auto field = GetFieldInfo(type.c_str(), "arenas_");
       if (field.size > 0) {
         offsets_["arenas_"] = field.FieldOffset;
         arena_count_ = field.size / pointer_size;
@@ -464,7 +656,6 @@ public:
     COREADDR src = 0;
 
     addr_ = addr;
-
     if (addr_) {
       arenas_.resize(arena_count_);
       src = addr_ + offsets_["arenas_"];
@@ -473,20 +664,27 @@ public:
         arena = addr;
         src += pointer_size;
       }
+      src = addr_ + offsets_["free_page_pool_"];
+      LOAD_MEMBER_POINTER(addr);
+      free_page_pool_.load(addr, arena_count_);
     }
     else {
+      free_page_pool_.load(0, 0);
       arenas_.clear();
     }
   }
 
   void dump(std::ostream &s) const {
     char buf1[20];
+    s << "arenas:" << std::endl;
     for (size_t i = 0; i < arenas_.size(); ++i) {
-      s << "arena[" << i << "] "
+      s << std::setw(3) << i << ' '
         << ResolveType(arenas_[i])
-        << ' ' << ptos(COREADDR(arenas_[i]), buf1, sizeof(buf1))
+        << ' ' << ptos(arenas_[i], buf1, sizeof(buf1))
         << std::endl;
     }
+    s << "free page pool entries:" << std::endl;
+    free_page_pool_.dump(s);
   }
 };
 
@@ -497,9 +695,16 @@ std::map<std::string, ULONG> BasePage::offsets_;
 std::map<std::string, ULONG> ThreadState::offsets_;
 std::map<std::string, ULONG> BaseArena::offsets_;
 std::map<std::string, ULONG> NormalPageArena::offsets_;
+std::map<std::string, ULONG> PageMemory::offsets_;
+std::map<std::string, ULONG> MemoryRegion::offsets_;
+std::map<std::string, ULONG> PagePool::PoolEntry::offsets_;
 std::map<std::string, ULONG> ThreadHeap::offsets_;
 int ThreadHeap::arena_count_ = 0;
 
+}
+
+DECLARE_API(pool) {
+  dump_arg<blink::PagePool::PoolEntry>(args);
 }
 
 DECLARE_API(heap) {

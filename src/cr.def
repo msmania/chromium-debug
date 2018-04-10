@@ -13,6 +13,7 @@ EXPORTS
 	lay
 	layout_allocator
 	page
+	pool
 	slot
 	spage
 	ts
