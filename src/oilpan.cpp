@@ -97,12 +97,49 @@ BasePage *BasePage::create(COREADDR addr) {
   return p;
 }
 
+class ThreadState : public Object {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  COREADDR heap_;
+
+public:
+  ThreadState() : heap_(0) {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::ThreadState";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+
+      LOAD_FIELD_OFFSET("heap_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr) {
+      src = addr_ + offsets_["heap_"];
+      LOAD_MEMBER_POINTER(heap_);
+    }
+    else {
+      heap_ = 0;
+    }
+  }
+
+  COREADDR Heap() const { return heap_; }
+};
+
 class BaseArena : public Object {
 private:
   static std::map<std::string, ULONG> offsets_;
 
 protected:
   std::unique_ptr<BasePage> first_page_;
+  ThreadState thread_state_;
 
 public:
   static BaseArena *create(COREADDR addr);
@@ -121,23 +158,34 @@ public:
       ULONG offset = 0;
       const char *field_name = nullptr;
       LOAD_FIELD_OFFSET("first_page_");
+      LOAD_FIELD_OFFSET("thread_state_");
     }
 
     char buf1[20];
     COREADDR src = 0;
 
     addr_ = addr;
+    if (addr_) {
+      src = addr_ + offsets_["first_page_"];
+      LOAD_MEMBER_POINTER(addr);
+      first_page_.reset(BasePage::create(addr));
 
-    src = addr + offsets_["first_page_"];
-    LOAD_MEMBER_POINTER(addr);
-    first_page_.reset(BasePage::create(addr));
+      src = addr_ + offsets_["thread_state_"];
+      LOAD_MEMBER_POINTER(addr);
+      thread_state_.load(addr);
+    }
+    else {
+      first_page_.reset(BasePage::create(0));
+      thread_state_.load(0);
+    }
   }
 
   virtual void dump(std::ostream &s) const {
     char buf1[20];
     char buf2[20];
     s << ResolveType(addr_)
-      << ' ' << ptos(addr_, buf1, sizeof(buf1))
+      << ' ' << ptos(addr_, buf1, sizeof(buf1)) << std::endl
+      << "blink::ThreadHeap " << ptos(thread_state_.Heap(), buf2, sizeof(buf2))
       << "\npage chain:\n";
 
     for (BasePage *page = first_page_.get();
@@ -446,6 +494,7 @@ std::map<std::string, ULONG> HeapObjectHeader::offsets_;
 std::map<std::string, ULONG> FreeListEntry::offsets_;
 std::map<std::string, ULONG> FreeList::offsets_;
 std::map<std::string, ULONG> BasePage::offsets_;
+std::map<std::string, ULONG> ThreadState::offsets_;
 std::map<std::string, ULONG> BaseArena::offsets_;
 std::map<std::string, ULONG> NormalPageArena::offsets_;
 std::map<std::string, ULONG> ThreadHeap::offsets_;
