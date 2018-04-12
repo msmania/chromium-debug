@@ -840,7 +840,7 @@ DECLARE_API(layout_allocator) {
     std::string("!WTF::Partitions::layout_allocator_"));
 }
 
-DECLARE_API(page) {
+DECLARE_API(ppage) {
   dump_arg<base::PartitionPage>(args);
 }
 

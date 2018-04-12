@@ -87,7 +87,7 @@ DECLARE_API(help) {
     "!buffer_allocator [-buckets] [address]\n"
     "!layout_allocator [-buckets] [address]\n"
     "!bucket <address>\n"
-    "!page <address>\n"
+    "!ppage <address>\n"
     "!slot <address>\n"
     "!spage <address>\n"
     "\n# Friendly info :)\n\n"

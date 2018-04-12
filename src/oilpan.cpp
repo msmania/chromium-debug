@@ -13,6 +13,8 @@ namespace blink {
 
 constexpr size_t kBlinkPageSizeLog2 = 17;
 constexpr size_t kBlinkPageSize = 1 << kBlinkPageSizeLog2;
+constexpr size_t kBlinkPageOffsetMask = kBlinkPageSize - 1;
+constexpr size_t kBlinkPageBaseMask = ~kBlinkPageOffsetMask;
 constexpr size_t kHeaderWrapperMarkBitMask = 1u << kBlinkPageSizeLog2;
 constexpr size_t kHeaderGCInfoIndexShift = kBlinkPageSizeLog2 + 1;
 constexpr size_t kHeaderGCInfoIndexMask = (static_cast<size_t>((1 << 14) - 1))
@@ -20,6 +22,9 @@ constexpr size_t kHeaderGCInfoIndexMask = (static_cast<size_t>((1 << 14) - 1))
 constexpr size_t kHeaderSizeMask = (static_cast<size_t>((1 << 14) - 1)) << 3;
 constexpr size_t kHeaderMarkBitMask = 1;
 constexpr size_t kHeaderFreedBitMask = 2;
+constexpr size_t kBlinkGuardPageSize = 4096;
+constexpr size_t kAllocationGranularity = 8;
+constexpr size_t kAllocationMask = kAllocationGranularity - 1;
 
 class BasePage : public Object {
 private:
@@ -27,12 +32,13 @@ private:
 
 protected:
   std::string type_;
-  std::unique_ptr<BasePage> next_;
+  COREADDR arena_;
+  COREADDR next_;
 
 public:
   static BasePage *create(COREADDR addr);
 
-  BasePage() {}
+  BasePage() : arena_(0), next_(0) {}
 
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
@@ -42,6 +48,7 @@ public:
       ULONG offset = 0;
       const char *field_name = nullptr;
 
+      LOAD_FIELD_OFFSET("arena_");
       LOAD_FIELD_OFFSET("next_");
     }
 
@@ -50,23 +57,72 @@ public:
 
     addr_ = addr;
     type_ = ResolveType(addr_);
-    next_ = 0;
 
     if (addr) {
-      src = addr + offsets_["next_"];
-      LOAD_MEMBER_POINTER(addr);
-      next_.reset(create(addr));
+      src = addr_ + offsets_["arena_"];
+      LOAD_MEMBER_POINTER(arena_);
+      src = addr_ + offsets_["next_"];
+      LOAD_MEMBER_POINTER(next_);
+    }
+    else {
+      arena_ = next_ = 0;
     }
   }
 
-  virtual size_t size() { return 0; }
+  virtual size_t size() const = 0;
+  COREADDR Arena() const { return arena_; }
+  virtual COREADDR Payload() const = 0;
+  virtual COREADDR PayloadEnd() const = 0;
+  virtual void dump(std::ostream &s) const = 0;
+
+  COREADDR GetAddress() const { return addr_; }
   const std::string &type() const { return type_; }
-  BasePage* Next() const { return next_.get(); }
+  COREADDR Next() const { return next_; }
 };
+
+size_t BlinkPagePayloadSize() {
+  return kBlinkPageSize - 2 * kBlinkGuardPageSize;
+}
 
 class NormalPage : public BasePage {
 public:
-  size_t size() override { return kBlinkPageSize; }
+  static COREADDR PageHeaderSize() {
+    static uint32_t page_header_size = 0;
+    static uint32_t object_header_size = 0;
+    if (page_header_size == 0) {
+      std::string type = target().engine();
+      type += "!blink::NormalPage";
+      page_header_size = GetTypeSize(type.c_str());
+    }
+    if (object_header_size == 0) {
+      std::string type = target().engine();
+      type += "!blink::HeapObjectHeader";
+      object_header_size = GetTypeSize(type.c_str());
+    }
+
+    COREADDR padding_size =
+        (page_header_size + kAllocationGranularity
+         - (object_header_size % kAllocationGranularity))
+        % kAllocationGranularity;
+    return page_header_size + padding_size;
+  }
+
+  COREADDR Payload() const { return GetAddress() + PageHeaderSize(); }
+  size_t PayloadSize() const {
+    return (BlinkPagePayloadSize() - PageHeaderSize()) & ~kAllocationMask;
+  }
+  COREADDR PayloadEnd() const { return Payload() + PayloadSize(); }
+  size_t size() const override { return kBlinkPageSize; }
+
+  virtual void dump(std::ostream &s) const {
+    CHAR buf1[20];
+    CHAR buf2[20];
+    CHAR buf3[20];
+    s << "blink::NormalPage "
+      << ptos(addr_, buf1, sizeof(buf1))
+      << " [" << ptos(Payload(), buf2, sizeof(buf2))
+      << '-' << ptos(PayloadEnd(), buf3, sizeof(buf3)) << ']';
+  }
 };
 
 BasePage *BasePage::create(COREADDR addr) {
@@ -76,24 +132,24 @@ BasePage *BasePage::create(COREADDR addr) {
                        blink::NormalPage);
   }
 
+  if (!addr) return nullptr;
+
   BasePage *p = nullptr;
-  if (!addr) {
-    p = new BasePage();
+
+  CHAR buf[20];
+  const auto &type = ResolveType(addr);
+  if (ctors.find(type) != ctors.end()) {
+    p = ctors[type]();
   }
-  else {
-    CHAR buf[20];
-    const auto &type = ResolveType(addr);
-    if (ctors.find(type) != ctors.end()) {
-      p = ctors[type]();
-    }
-    else {
-      dprintf("> Fallback to BasePage::ctor() for %s (= %s)\n",
-              type.c_str(),
-              ptos(addr, buf, sizeof(buf)));
-      p = new BasePage();
-    }
+
+  if (p)
     p->load(addr);
+  else {
+    dprintf("> BasePage::create failed for %s (= %s)\n",
+            type.c_str(),
+            ptos(addr, buf, sizeof(buf)));
   }
+
   return p;
 }
 
@@ -138,13 +194,15 @@ private:
   static std::map<std::string, ULONG> offsets_;
 
 protected:
-  std::unique_ptr<BasePage> first_page_;
+  COREADDR first_page_;
+  COREADDR first_unswept_page_;
   ThreadState thread_state_;
+  int index_;
 
 public:
   static BaseArena *create(COREADDR addr);
 
-  BaseArena() {}
+  BaseArena() : first_page_(0), index_(-1) {}
 
   virtual bool is_current_page(COREADDR lower, COREADDR upper) const {
     return false;
@@ -158,7 +216,9 @@ public:
       ULONG offset = 0;
       const char *field_name = nullptr;
       LOAD_FIELD_OFFSET("first_page_");
+      LOAD_FIELD_OFFSET("first_unswept_page_");
       LOAD_FIELD_OFFSET("thread_state_");
+      LOAD_FIELD_OFFSET("index_");
     }
 
     char buf1[20];
@@ -167,16 +227,34 @@ public:
     addr_ = addr;
     if (addr_) {
       src = addr_ + offsets_["first_page_"];
-      LOAD_MEMBER_POINTER(addr);
-      first_page_.reset(BasePage::create(addr));
+      LOAD_MEMBER_POINTER(first_page_);
+
+      src = addr_ + offsets_["first_unswept_page_"];
+      LOAD_MEMBER_POINTER(first_unswept_page_);
 
       src = addr_ + offsets_["thread_state_"];
       LOAD_MEMBER_POINTER(addr);
       thread_state_.load(addr);
+
+      src = addr_ + offsets_["index_"];
+      LOAD_MEMBER_VALUE(index_);
     }
     else {
-      first_page_.reset(BasePage::create(0));
+      first_page_ = 0;
       thread_state_.load(0);
+      index_ = -1;
+    }
+  }
+
+  void dump_page_chain(std::ostream &s, COREADDR head) const {
+    std::unique_ptr<BasePage> page;
+    for (COREADDR p = head; p; p = page->Next()) {
+      page.reset(BasePage::create(p));
+      page->dump(s);
+      if (is_current_page(page->Payload(), page->PayloadEnd()))
+        s << " #\n";
+      else
+        s << std::endl;
     }
   }
 
@@ -186,20 +264,10 @@ public:
     s << ResolveType(addr_)
       << ' ' << ptos(addr_, buf1, sizeof(buf1)) << std::endl
       << "blink::ThreadHeap " << ptos(thread_state_.Heap(), buf2, sizeof(buf2))
-      << "\npage chain:\n";
-
-    for (BasePage *page = first_page_.get();
-         ;
-         page = page->Next()) {
-      auto addr = page->addr();
-      if (!addr) break;
-      auto limit = addr + page->size();
-      s << page->type()
-        << ' ' << ptos(addr, buf1, sizeof(buf1))
-        << " - " << ptos(limit, buf2, sizeof(buf2))
-        << (is_current_page(addr, limit) ? " #" : "")
-        << std::endl;
-    }
+      << " Arena#" << index_ << "\nactive pages:\n";
+    dump_page_chain(s, first_page_);
+    s << "unswept pages:\n";
+    dump_page_chain(s, first_unswept_page_);
   }
 };
 
@@ -235,7 +303,13 @@ public:
   }
 
   virtual void dump(std::ostream &s) const {
-    s << "Size:         " << static_cast<uint32_t>(size()) << std::endl
+    char buf1[20];
+    char buf2[20];
+    COREADDR page_header = (addr_ & kBlinkPageBaseMask) + kBlinkGuardPageSize;
+    std::unique_ptr<BasePage> page(BasePage::create(page_header));
+    s << page->type() << ' ' << ptos(page_header, buf1, sizeof(buf1))
+      << " Arena " << ptos(page->Arena(), buf2, sizeof(buf2)) << std::endl
+      << "Size:         " << static_cast<uint32_t>(size()) << std::endl
       << "GCinfo index: " << static_cast<uint32_t>(GcInfoIndex()) << std::endl
       << "Free:         " << (IsFree() ? 'Y' : 'N') << std::endl
       << "Mark:         " << (IsMarked() ? 'Y' : 'N') << std::endl
@@ -475,6 +549,11 @@ public:
 
   COREADDR Base() const { return base_; }
   uint64_t size() const { return size_; }
+
+  uint32_t Index(COREADDR address) const {
+    size_t offset = (address & kBlinkPageBaseMask) - Base();
+    return static_cast<uint32_t>(offset / kBlinkPageSize);
+  }
 };
 
 class PageMemoryRegion : public MemoryRegion {};
@@ -518,8 +597,8 @@ public:
   void dump(std::ostream &s) const {
     char buf1[20];
     char buf2[20];
-    s << ptos(reserved_.Base(), buf1, sizeof(buf1)) << ' '
-      << static_cast<uint32_t>(reserved_.size()) << ' '
+    s << ptos(reserved_.Base(), buf1, sizeof(buf1)) << " #"
+      << reserved_.Index(writable_.Base()) << ' '
       << ptos(writable_.Base(), buf2, sizeof(buf2)) << ' '
       << static_cast<uint32_t>(writable_.size())
       << std::endl;
@@ -715,18 +794,10 @@ DECLARE_API(chunk) {
   dump_arg<blink::HeapObjectHeader>(args);
 }
 
+DECLARE_API(hpage) {
+  dump_arg_factory<true>(args, blink::BasePage::create);
+}
+
 DECLARE_API(arena) {
-  const char delim[] = " ";
-  char args_copy[1024];
-  if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
-    char *next_token = nullptr;
-    if (auto token = strtok_s(args_copy, delim, &next_token)) {
-      Object global_initializer;
-      std::unique_ptr<blink::BaseArena> arena(
-        blink::BaseArena::create(GetExpression(token)));
-      std::stringstream s;
-      arena->dump(s);
-      dprintf(s.str().c_str());
-    }
-  }
+  dump_arg_factory<false>(args, blink::BaseArena::create);
 }

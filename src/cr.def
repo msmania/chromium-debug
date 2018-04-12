@@ -10,9 +10,10 @@ EXPORTS
 	dom
 	fast_malloc_allocator
 	heap
+	hpage
 	lay
 	layout_allocator
-	page
+	ppage
 	pool
 	slot
 	spage

@@ -72,7 +72,7 @@ active pages / num_allocated_slots:
 00000bad`97400000 #116  00000bad`97401e80 2029
 00000bad`96e00000 #41   00000bad`96e01520 2024
 00000bad`97600000 #55   00000bad`976016e0 1352
-0:017> !page 00000bad`97401e80
+0:017> !ppage 00000bad`97401e80
 bucket:                  00007fff`aa8f9bc0 (total slots=2048)
 num_allocated_slots:     2029
 num_unprovisioned_slots: 0
