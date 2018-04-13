@@ -28,9 +28,19 @@ constexpr size_t kAllocationMask = kAllocationGranularity - 1;
 
 class BasePage : public Object {
 private:
+  static uint32_t object_header_size;
   static std::map<std::string, ULONG> offsets_;
 
 protected:
+  static uint32_t get_object_header_size() {
+    if (object_header_size == 0) {
+      std::string type = target().engine();
+      type += "!blink::HeapObjectHeader";
+      object_header_size = GetTypeSize(type.c_str());
+    }
+    return object_header_size;
+  }
+
   std::string type_;
   COREADDR arena_;
   COREADDR next_;
@@ -74,9 +84,11 @@ public:
     CHAR buf2[20];
     s << type() << ' ' << ptos(addr_, buf1, sizeof(buf1))
       << " Arena " << ptos(Arena(), buf2, sizeof(buf2));
+    s << " [" << ptos(Payload(), buf1, sizeof(buf1))
+      << '-' << ptos(PayloadEnd(), buf2, sizeof(buf2)) << ']';
   }
 
-  virtual size_t size() const = 0;
+  virtual uint64_t size() const = 0;
   COREADDR Arena() const { return arena_; }
   virtual COREADDR Payload() const = 0;
   virtual COREADDR PayloadEnd() const = 0;
@@ -87,49 +99,96 @@ public:
   COREADDR Next() const { return next_; }
 };
 
-size_t BlinkPagePayloadSize() {
+uint64_t BlinkPagePayloadSize() {
   return kBlinkPageSize - 2 * kBlinkGuardPageSize;
 }
 
 class NormalPage : public BasePage {
 public:
-  static COREADDR PageHeaderSize() {
-    static uint32_t page_header_size = 0;
-    static uint32_t object_header_size = 0;
+  static uint32_t page_header_size;
+  static uint64_t PageHeaderSize() {
     if (page_header_size == 0) {
       std::string type = target().engine();
       type += "!blink::NormalPage";
       page_header_size = GetTypeSize(type.c_str());
     }
-    if (object_header_size == 0) {
-      std::string type = target().engine();
-      type += "!blink::HeapObjectHeader";
-      object_header_size = GetTypeSize(type.c_str());
-    }
 
-    COREADDR padding_size =
+    uint64_t padding_size =
         (page_header_size + kAllocationGranularity
-         - (object_header_size % kAllocationGranularity))
+         - (get_object_header_size() % kAllocationGranularity))
         % kAllocationGranularity;
     return page_header_size + padding_size;
   }
 
   COREADDR Payload() const { return GetAddress() + PageHeaderSize(); }
-  size_t PayloadSize() const {
+  uint64_t PayloadSize() const {
     return (BlinkPagePayloadSize() - PageHeaderSize()) & ~kAllocationMask;
   }
   COREADDR PayloadEnd() const { return Payload() + PayloadSize(); }
-  size_t size() const override { return kBlinkPageSize; }
-
-  virtual void dump(std::ostream &s) const {
-    CHAR buf1[20];
-    CHAR buf2[20];
-    BasePage::dump(s);
-    s << " [" << ptos(Payload(), buf1, sizeof(buf1))
-      << '-' << ptos(PayloadEnd(), buf2, sizeof(buf2)) << ']';
-  }
+  uint64_t size() const override { return kBlinkPageSize; }
 
   virtual void scan(std::ostream &s) const;
+};
+
+class LargeObjectPage : public BasePage {
+private:
+  static std::map<std::string, ULONG> offsets_;
+
+  uint64_t payload_size_;
+
+public:
+  static uint32_t page_header_size;
+  static uint64_t PageHeaderSize() {
+    if (page_header_size == 0) {
+      std::string type = target().engine();
+      type += "!blink::LargeObjectPage";
+      page_header_size = GetTypeSize(type.c_str());
+    }
+
+    uint64_t padding_size =
+        (page_header_size + kAllocationGranularity -
+         (get_object_header_size() % kAllocationGranularity)) %
+        kAllocationGranularity;
+    return page_header_size + padding_size;
+  }
+
+  LargeObjectPage() : payload_size_(0) {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::LargeObjectPage";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+
+      LOAD_FIELD_OFFSET("payload_size_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    BasePage::load(addr);
+    if (addr_) {
+      src = addr_ + offsets_["payload_size_"];
+      LOAD_MEMBER_POINTER(addr);
+      payload_size_ = addr;
+    }
+    else {
+      payload_size_ = 0;
+    }
+  }
+
+  COREADDR Payload() const {
+    return GetAddress() + PageHeaderSize() + get_object_header_size();
+  }
+  uint64_t PayloadSize() const { return payload_size_; }
+  COREADDR PayloadEnd() const { return Payload() + PayloadSize(); }
+  uint64_t size() const override {
+    return PageHeaderSize() + get_object_header_size() + payload_size_;
+  }
+
+  virtual void scan(std::ostream &s) const {}
 };
 
 BasePage *BasePage::create(COREADDR addr) {
@@ -137,6 +196,8 @@ BasePage *BasePage::create(COREADDR addr) {
   if (ctors.size() == 0) {
     ADD_CTOR(BasePage, blink::NormalPage,
                        blink::NormalPage);
+    ADD_CTOR(BasePage, blink::LargeObjectPage,
+                       blink::LargeObjectPage);
   }
 
   if (!addr) return nullptr;
@@ -332,7 +393,7 @@ public:
       << std::endl;
   }
 
-  size_t GcInfoIndex() const {
+  uint64_t GcInfoIndex() const {
     return (encoded_ & kHeaderGCInfoIndexMask) >> kHeaderGCInfoIndexShift;
   }
 
@@ -340,7 +401,7 @@ public:
     return encoded_ & kHeaderWrapperMarkBitMask;
   }
 
-  size_t size() const {
+  uint64_t size() const {
     return encoded_ & kHeaderSizeMask;
   }
 
@@ -356,7 +417,7 @@ public:
 void NormalPage::scan(std::ostream &s) const {
   int count = 0;
   COREADDR start_of_gap = Payload(), end_of_gap = PayloadEnd();
-  size_t size = PayloadSize();
+  uint64_t size = PayloadSize();
   HeapObjectHeader header;
   for (COREADDR header_address = start_of_gap;
        size && header_address < end_of_gap;
@@ -584,7 +645,7 @@ public:
   uint64_t size() const { return size_; }
 
   uint32_t Index(COREADDR address) const {
-    size_t offset = (address & kBlinkPageBaseMask) - Base();
+    uint64_t offset = (address & kBlinkPageBaseMask) - Base();
     return static_cast<uint32_t>(offset / kBlinkPageSize);
   }
 };
@@ -800,6 +861,10 @@ public:
   }
 };
 
+uint32_t BasePage::object_header_size = 0;
+uint32_t NormalPage::page_header_size = 0;
+uint32_t LargeObjectPage::page_header_size = 0;
+std::map<std::string, ULONG> LargeObjectPage::offsets_;
 std::map<std::string, ULONG> HeapObjectHeader::offsets_;
 std::map<std::string, ULONG> FreeListEntry::offsets_;
 std::map<std::string, ULONG> FreeList::offsets_;
