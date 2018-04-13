@@ -69,11 +69,18 @@ public:
     }
   }
 
+  virtual void dump(std::ostream &s) const {
+    CHAR buf1[20];
+    CHAR buf2[20];
+    s << type() << ' ' << ptos(addr_, buf1, sizeof(buf1))
+      << " Arena " << ptos(Arena(), buf2, sizeof(buf2));
+  }
+
   virtual size_t size() const = 0;
   COREADDR Arena() const { return arena_; }
   virtual COREADDR Payload() const = 0;
   virtual COREADDR PayloadEnd() const = 0;
-  virtual void dump(std::ostream &s) const = 0;
+  virtual void scan(std::ostream &s) const = 0;
 
   COREADDR GetAddress() const { return addr_; }
   const std::string &type() const { return type_; }
@@ -117,12 +124,12 @@ public:
   virtual void dump(std::ostream &s) const {
     CHAR buf1[20];
     CHAR buf2[20];
-    CHAR buf3[20];
-    s << "blink::NormalPage "
-      << ptos(addr_, buf1, sizeof(buf1))
-      << " [" << ptos(Payload(), buf2, sizeof(buf2))
-      << '-' << ptos(PayloadEnd(), buf3, sizeof(buf3)) << ']';
+    BasePage::dump(s);
+    s << " [" << ptos(Payload(), buf1, sizeof(buf1))
+      << '-' << ptos(PayloadEnd(), buf2, sizeof(buf2)) << ']';
   }
+
+  virtual void scan(std::ostream &s) const;
 };
 
 BasePage *BasePage::create(COREADDR addr) {
@@ -304,16 +311,25 @@ public:
 
   virtual void dump(std::ostream &s) const {
     char buf1[20];
-    char buf2[20];
     COREADDR page_header = (addr_ & kBlinkPageBaseMask) + kBlinkGuardPageSize;
     std::unique_ptr<BasePage> page(BasePage::create(page_header));
-    s << page->type() << ' ' << ptos(page_header, buf1, sizeof(buf1))
-      << " Arena " << ptos(page->Arena(), buf2, sizeof(buf2)) << std::endl
+    s << page->type() << ' ' << ptos(page_header, buf1, sizeof(buf1)) << std::endl
       << "Size:         " << static_cast<uint32_t>(size()) << std::endl
       << "GCinfo index: " << static_cast<uint32_t>(GcInfoIndex()) << std::endl
       << "Free:         " << (IsFree() ? 'Y' : 'N') << std::endl
       << "Mark:         " << (IsMarked() ? 'Y' : 'N') << std::endl
       << "DOM mark:     " << (IsWrapperHeaderMarked() ? 'Y' : 'N') << std::endl;
+  }
+
+  void dump_oneline(std::ostream &s) const {
+    char buf1[20];
+    s << ptos(addr_, buf1, sizeof(buf1))
+      << (IsFree() ? " F" : "  ")
+      << (IsMarked() ? " M" : "  ")
+      << (IsWrapperHeaderMarked() ? " D" : "  ")
+      << std::setw(6) << static_cast<uint32_t>(GcInfoIndex())
+      << std::setw(7) << static_cast<uint32_t>(size())
+      << std::endl;
   }
 
   size_t GcInfoIndex() const {
@@ -336,6 +352,23 @@ public:
     return encoded_ & kHeaderMarkBitMask;
   }
 };
+
+void NormalPage::scan(std::ostream &s) const {
+  int count = 0;
+  COREADDR start_of_gap = Payload(), end_of_gap = PayloadEnd();
+  size_t size = PayloadSize();
+  HeapObjectHeader header;
+  for (COREADDR header_address = start_of_gap;
+       size && header_address < end_of_gap;
+       ++count) {
+    header.load(header_address);
+    s << std::setw(4) << count << ' ';
+    header.dump_oneline(s);
+
+    size = header.size();
+    header_address += size;
+  }
+}
 
 class FreeListEntry final : public HeapObjectHeader {
 private:
@@ -800,4 +833,21 @@ DECLARE_API(hpage) {
 
 DECLARE_API(arena) {
   dump_arg_factory<false>(args, blink::BaseArena::create);
+}
+
+struct BlinkPageScanner {
+  std::unique_ptr<blink::BasePage> page_;
+
+  void load(COREADDR addr) {
+    Object global_initializer;
+    page_.reset(blink::BasePage::create(addr));
+  }
+
+  void dump(std::ostream &s) const {
+    if (page_) page_->scan(s);
+  }
+};
+
+DECLARE_API(scan) {
+  dump_arg<BlinkPageScanner>(args);
 }

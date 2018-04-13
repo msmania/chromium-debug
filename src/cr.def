@@ -15,6 +15,7 @@ EXPORTS
 	layout_allocator
 	ppage
 	pool
+	scan
 	slot
 	spage
 	ts
