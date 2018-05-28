@@ -137,9 +137,18 @@ private:
   int16_t num_allocated_slots;
   uint16_t num_unprovisioned_slots;
   uint16_t page_offset;
+  int16_t empty_cache_index;
 
 public:
-  PartitionPage() {}
+  PartitionPage()
+    : freelist_head(0),
+      next_page(0),
+      bucket(0),
+      num_allocated_slots(0),
+      num_unprovisioned_slots(0),
+      page_offset(0),
+      empty_cache_index(0)
+  {}
 
   uint16_t get_page_offset() const { return page_offset; }
 
@@ -156,6 +165,7 @@ public:
       LOAD_FIELD_OFFSET("num_allocated_slots");
       LOAD_FIELD_OFFSET("num_unprovisioned_slots");
       LOAD_FIELD_OFFSET("page_offset");
+      LOAD_FIELD_OFFSET("empty_cache_index");
     }
 
     char buf1[20];
@@ -175,13 +185,17 @@ public:
       LOAD_MEMBER_VALUE(num_unprovisioned_slots);
       src = addr_ + offsets_["page_offset"];
       LOAD_MEMBER_VALUE(page_offset);
+      src = addr_ + offsets_["empty_cache_index"];
+      LOAD_MEMBER_VALUE(empty_cache_index);
     }
     else {
-      freelist_head = next_page = bucket = num_allocated_slots = page_offset = 0;
+      freelist_head = next_page = bucket = num_allocated_slots
+        = num_unprovisioned_slots = page_offset = empty_cache_index = 0;
     }
   }
 
   void dump(std::ostream &s) const;
+  void dump_pages_for_superpage(std::ostream &s) const;
 
   void dump_pages(std::ostream &s) const {
     if (addr_ == g_sentinel_page) {
@@ -219,6 +233,40 @@ public:
           << ptos(p, buf2, sizeof(buf2))
           << ' ' << pp.num_allocated_slots << std::endl;
       }
+    }
+  }
+};
+
+struct SuperPage {
+  COREADDR base_ = 0;
+
+  void load(COREADDR addr) {
+    base_ = addr & kSuperPageBaseMask;
+  }
+
+  void dump(std::ostream &s) const {
+    char buf1[20];
+    constexpr COREADDR ppage_size = 1 << kPartitionPageShift;
+    const COREADDR metadata_base = base_ + kSystemPageSize;
+    int index = 0;
+    for (COREADDR p = base_ + ppage_size;
+         p < base_ + kSuperPageSize;
+         p += ppage_size) {
+
+      PartitionPage metadata;
+      metadata.load(metadata_base + ((++index) << kPageMetadataShift));
+
+      s << std::dec << std::setfill(' ') << std::setw(3) << index
+        << ' ' << ptos(p, buf1, sizeof(buf1));
+
+      ULONG dummy, cb;
+      if (!ReadMemory(p, &dummy, sizeof(dummy), &cb))
+        s << " x ";
+      else
+        s << "   ";
+
+      metadata.dump_pages_for_superpage(s);
+      s << std::endl;
     }
   }
 };
@@ -264,6 +312,9 @@ public:
   }
   uint16_t get_slots_per_span() const {
     return static_cast<uint16_t>(get_bytes_per_span() / slot_size);
+  }
+  uint32_t get_slot_size() const {
+    return slot_size;
   }
 
   virtual void load(COREADDR addr) {
@@ -336,6 +387,22 @@ void PartitionPage::dump(std::ostream &s) const {
     if ((i & 3) == 3) ss << std::endl;
   }
   s << i << "):" << std::endl << ss.str() << std::endl;
+}
+
+void PartitionPage::dump_pages_for_superpage(std::ostream &s) const {
+  char buf1[20];
+  char buf2[20];
+  s << ptos(addr(), buf1, sizeof(buf1))
+    << std::dec << std::setfill(' ') << std::setw(6) << num_allocated_slots
+    << std::setw(6) << num_unprovisioned_slots
+    << std::setw(2) << page_offset
+    << std::setw(3) << empty_cache_index;
+  if (bucket) {
+    PartitionBucket b;
+    b.load(bucket);
+    s << ' ' << ptos(bucket, buf2, sizeof(buf2))
+      << " (slot=0x" << std::hex << b.get_slot_size() << ')';
+  }
 }
 
 class PartitionRootBase : public Object {
@@ -687,6 +754,11 @@ void dump_arg(PCSTR args) {
 
 DECLARE_API(page) {
   dump_arg<base::PartitionPage>(args);
+}
+
+DECLARE_API(spage) {
+  Object global_initializer;
+  dump_arg<base::SuperPage>(args);
 }
 
 DECLARE_API(slot) {

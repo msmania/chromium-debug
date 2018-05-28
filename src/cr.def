@@ -13,4 +13,5 @@ EXPORTS
 	layout_allocator
 	page
 	slot
+	spage
 	ts

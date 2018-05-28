@@ -89,6 +89,7 @@ DECLARE_API(help) {
     "!bucket <address>\n"
     "!page <address>\n"
     "!slot <address>\n"
+    "!spage <address>\n"
     "\n# Friendly info :)\n\n"
     "Symbol server:\n"
     "https://chromium-browser-symsrv.commondatastorage.googleapis.com\n\n"
