@@ -367,26 +367,37 @@ public:
 };
 
 void PartitionPage::dump(std::ostream &s) const {
-  PartitionBucket b;
-  b.load(bucket);
   char buf1[20];
-  s << "bucket:                  " << ptos(bucket, buf1, sizeof(buf1))
-    << " (total slots=" << b.get_slots_per_span() << ')' << std::endl
-    << "num_allocated_slots:     " << num_allocated_slots << std::endl
-    << "num_unprovisioned_slots: " << num_unprovisioned_slots << std::endl
-    << "free slots (";
-
-  std::stringstream ss;
-  PartitionFreelistEntry next_entry;
-  int i = 0;
-  for (COREADDR p = freelist_head;
-       p;
-       next_entry.load(p), p = next_entry.next_transformed(), ++i) {
-    if (i & 3) ss << ' ';
-    ss << ptos(p, buf1, sizeof(buf1));
-    if ((i & 3) == 3) ss << std::endl;
+  if (page_offset) {
+    COREADDR meta = addr() - (page_offset << kPageMetadataShift);
+    s << "Resolving page_offset=" << page_offset
+      << " -> " << ptos(meta, buf1, sizeof(buf1))
+      << std::endl;
+    PartitionPage ppage;
+    ppage.load(meta);
+    ppage.dump(s);
   }
-  s << i << "):" << std::endl << ss.str() << std::endl;
+  else {
+    PartitionBucket b;
+    b.load(bucket);
+    s << "bucket:                  " << ptos(bucket, buf1, sizeof(buf1))
+      << " (total slots=" << b.get_slots_per_span() << ')' << std::endl
+      << "num_allocated_slots:     " << num_allocated_slots << std::endl
+      << "num_unprovisioned_slots: " << num_unprovisioned_slots << std::endl
+      << "free slots (";
+
+    std::stringstream ss;
+    PartitionFreelistEntry next_entry;
+    int i = 0;
+    for (COREADDR p = freelist_head;
+         p;
+         next_entry.load(p), p = next_entry.next_transformed(), ++i) {
+      if (i & 3) ss << ' ';
+      ss << ptos(p, buf1, sizeof(buf1));
+      if ((i & 3) == 3) ss << std::endl;
+    }
+    s << i << "):" << std::endl << ss.str() << std::endl;
+  }
 }
 
 void PartitionPage::dump_pages_for_superpage(std::ostream &s) const {
