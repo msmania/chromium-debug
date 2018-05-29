@@ -92,12 +92,55 @@ public:
   void dump(std::ostream &s) const {
     char buf1[20];
     char buf2[20];
-    auto num_pages = static_cast<int>((super_pages_end - super_page_base) >> 21);
+    auto num_pages = static_cast<int>(
+      (super_pages_end - super_page_base) >> kSuperPageShift);
     s << ptos(super_page_base, buf1, sizeof(buf1))
       << '-'
       << ptos(super_pages_end, buf2, sizeof(buf2))
       << " (" << num_pages << ")";
   }
+};
+
+struct PartitionDirectMapExtent : Object {
+  static std::map<std::string, ULONG> offsets_;
+  COREADDR next_extent = 0;
+  COREADDR prev_extent = 0;
+  COREADDR bucket = 0;
+  size_t map_size = 0;
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!base::PartitionDirectMapExtent";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+      LOAD_FIELD_OFFSET("next_extent");
+      LOAD_FIELD_OFFSET("prev_extent");
+      LOAD_FIELD_OFFSET("bucket");
+      LOAD_FIELD_OFFSET("map_size");
+    }
+
+    addr_ = addr;
+    if (addr) {
+      char buf1[20];
+      COREADDR src = 0;
+
+      src = addr + offsets_["next_extent"];
+      LOAD_MEMBER_POINTER(next_extent);
+      src = addr + offsets_["prev_extent"];
+      LOAD_MEMBER_POINTER(prev_extent);
+      src = addr + offsets_["bucket"];
+      LOAD_MEMBER_POINTER(bucket);
+      src = addr + offsets_["map_size"];
+      LOAD_MEMBER_POINTER(map_size);
+    }
+    else {
+      next_extent = prev_extent = bucket = map_size = 0;
+    }
+  }
+
+  void dump(std::ostream &s) const;
 };
 
 class PartitionFreelistEntry : public Object {
@@ -382,6 +425,14 @@ public:
   }
 };
 
+void PartitionDirectMapExtent::dump(std::ostream &s) const {
+  char buf1[20];
+  PartitionBucket b;
+  b.load(bucket);
+  s << ptos(bucket, buf1, sizeof(buf1))
+    << ' ' << std::hex << b.get_slot_size();
+}
+
 void PartitionPage::dump(std::ostream &s) const {
   if (addr_ == Global::get_sentinel_page()) {
     s << "g_sentinel_page\n";
@@ -399,9 +450,18 @@ void PartitionPage::dump(std::ostream &s) const {
     ppage.dump(s);
   }
   else {
+    COREADDR super_page_ptr = addr() & kSuperPageBaseMask;
+    uint32_t partition_page_index = static_cast<uint32_t>(
+      (addr() - super_page_ptr - kSystemPageSize) >> kPageMetadataShift);
+    COREADDR payload_start =
+      super_page_ptr + (partition_page_index << kPartitionPageShift);
+    s << "payload start: "
+      << ptos(payload_start, buf1, sizeof(buf1))
+      << " #" << partition_page_index << std::endl;
+
     PartitionBucket b;
     b.load(bucket);
-    s << "bucket:                  " << ptos(bucket, buf1, sizeof(buf1))
+    s << "bucket:        " << ptos(bucket, buf1, sizeof(buf1))
       << " (total slots=" << b.get_slots_per_span() << ')' << std::endl
       << "num_allocated_slots:     " << num_allocated_slots << std::endl
       << "num_unprovisioned_slots: " << num_unprovisioned_slots << std::endl
@@ -443,9 +503,12 @@ private:
 
 protected:
   COREADDR first_extent;
+  COREADDR direct_map_list;
 
 public:
-  PartitionRootBase() {}
+  PartitionRootBase()
+    : first_extent(0), direct_map_list(0)
+  {}
 
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
@@ -455,6 +518,7 @@ public:
       ULONG offset = 0;
       const char *field_name = nullptr;
       LOAD_FIELD_OFFSET("first_extent");
+      LOAD_FIELD_OFFSET("direct_map_list");
     }
 
     char buf1[20];
@@ -464,21 +528,31 @@ public:
     if (addr) {
       src = addr_ + offsets_["first_extent"];
       LOAD_MEMBER_POINTER(first_extent);
+      src = addr_ + offsets_["direct_map_list"];
+      LOAD_MEMBER_POINTER(direct_map_list);
     }
     else {
-      first_extent = 0;
+      first_extent = direct_map_list = 0;
     }
   }
 
   virtual void dump(std::ostream &s) const {
-    if (!first_extent)
-      s << "no extents\n";
-    else {
+    if (first_extent) {
       s << "extent(s): ";
       PartitionSuperPageExtentEntry extent;
       for (auto p = first_extent; p; p = extent.next) {
         extent.load(p);
         if (p != first_extent) s << "          ";
+        extent.dump(s);
+        s << std::endl;
+      }
+    }
+    if (direct_map_list) {
+      s << "direct mapped bucket(s): ";
+      PartitionDirectMapExtent extent;
+      for (auto p = direct_map_list; p; p = extent.next_extent) {
+        extent.load(p);
+        if (p != direct_map_list) s << "                         ";
         extent.dump(s);
         s << std::endl;
       }
@@ -666,6 +740,7 @@ int PartitionRootGeneric::bucket_count_ = 0;
 int PartitionRootGeneric::lookup_count_ = 0;
 int SizeSpecificPartitionAllocator1024::bucket_size_ = 0;
 int SizeSpecificPartitionAllocator1024::bucket_count_ = 0;
+std::map<std::string, ULONG> PartitionDirectMapExtent::offsets_;
 std::map<std::string, ULONG> PartitionSuperPageExtentEntry::offsets_;
 std::map<std::string, ULONG> PartitionFreelistEntry::offsets_;
 std::map<std::string, ULONG> PartitionPage::offsets_;
