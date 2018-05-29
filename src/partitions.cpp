@@ -26,8 +26,24 @@ constexpr size_t kSuperPageSize = 1 << kSuperPageShift;
 constexpr size_t kSuperPageOffsetMask = kSuperPageSize - 1;
 constexpr size_t kSuperPageBaseMask = ~kSuperPageOffsetMask;
 
-COREADDR g_sentinel_page = 0;
-COREADDR g_sentinel_bucket = 0;
+class Global : Object {
+  static COREADDR g_sentinel_page;
+  static COREADDR g_sentinel_bucket;
+public:
+  static COREADDR get_sentinel_page() {
+    if (!g_sentinel_page)
+      g_sentinel_page = get_expression("!g_sentinel_page");
+    return g_sentinel_page;
+  }
+  static COREADDR get_sentinel_bucket() {
+    if (!g_sentinel_bucket)
+      g_sentinel_bucket = get_expression("!g_sentinel_bucket");
+    return g_sentinel_bucket;
+  }
+};
+
+COREADDR Global::g_sentinel_page = 0;
+COREADDR Global::g_sentinel_bucket = 0;
 
 class PartitionSuperPageExtentEntry : public Object {
 private:
@@ -198,7 +214,7 @@ public:
   void dump_pages_for_superpage(std::ostream &s) const;
 
   void dump_pages(std::ostream &s) const {
-    if (addr_ == g_sentinel_page) {
+    if (addr_ == Global::get_sentinel_page()) {
       s << "g_sentinel_page\n";
     }
     else {
@@ -215,7 +231,7 @@ public:
   }
 
   void dump_pages_for_bucket(std::ostream &s) const {
-    if (addr_ == g_sentinel_page) {
+    if (addr_ == Global::get_sentinel_page()) {
       s << "g_sentinel_page\n";
     }
     else {
@@ -367,6 +383,11 @@ public:
 };
 
 void PartitionPage::dump(std::ostream &s) const {
+  if (addr_ == Global::get_sentinel_page()) {
+    s << "g_sentinel_page\n";
+    return;
+  }
+
   char buf1[20];
   if (page_offset) {
     COREADDR meta = addr() - (page_offset << kPageMetadataShift);
@@ -479,9 +500,6 @@ public:
 
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
-      g_sentinel_page = get_expression("!g_sentinel_page");
-      g_sentinel_bucket = get_expression("!g_sentinel_bucket");
-
       std::string type = target().engine();
       type += "!base::PartitionRootGeneric";
 
