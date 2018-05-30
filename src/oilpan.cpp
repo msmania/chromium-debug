@@ -189,11 +189,11 @@ public:
   }
 
   COREADDR Payload() const {
-    return GetAddress() + PageHeaderSize() + get_object_header_size();
+    return GetAddress() + PageHeaderSize();
   }
   uint64_t PayloadSize() const { return payload_size_; }
   COREADDR PayloadEnd() const {
-    return Payload() + PayloadSize() - get_object_header_size();
+    return Payload() + PayloadSize();
   }
   uint64_t size() const override {
     return PageHeaderSize() + get_object_header_size() + payload_size_;
