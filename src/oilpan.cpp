@@ -394,15 +394,14 @@ public:
       << "DOM mark:     " << (IsWrapperHeaderMarked() ? 'Y' : 'N') << std::endl;
   }
 
-  void dump_oneline(std::ostream &s) const {
+  void dump_for_scan(std::ostream &s) const {
     char buf1[20];
     s << ptos(addr_, buf1, sizeof(buf1))
       << (IsFree() ? " F" : "  ")
       << (IsMarked() ? " M" : "  ")
       << (IsWrapperHeaderMarked() ? " D" : "  ")
       << std::setw(6) << static_cast<uint32_t>(GcInfoIndex())
-      << std::setw(7) << static_cast<uint32_t>(size())
-      << std::endl;
+      << std::setw(7) << static_cast<uint32_t>(size());
   }
 
   uint64_t GcInfoIndex() const {
@@ -425,23 +424,6 @@ public:
     return encoded_ & kHeaderMarkBitMask;
   }
 };
-
-void NormalPage::scan(std::ostream &s) const {
-  int count = 0;
-  COREADDR start_of_gap = Payload(), end_of_gap = PayloadEnd();
-  uint64_t size = PayloadSize();
-  HeapObjectHeader header;
-  for (COREADDR header_address = start_of_gap;
-       size && header_address < end_of_gap;
-       ++count) {
-    header.load(header_address);
-    s << std::setw(4) << count << ' ';
-    header.dump_oneline(s);
-
-    size = header.size();
-    header_address += size;
-  }
-}
 
 class FreeListEntry final : public HeapObjectHeader {
 private:
@@ -615,7 +597,42 @@ public:
     return current_allocation_point_ >= lower
            && current_allocation_point_ < upper;
   }
+
+  COREADDR get_current_allocation_point() const {
+    return current_allocation_point_;
+  }
+  COREADDR get_remaining_allocation_size() const {
+    return remaining_allocation_size_;
+  }
 };
+
+void NormalPage::scan(std::ostream &s) const {
+  NormalPageArena arena;
+  arena.load(arena_);
+  COREADDR current_allocation_point = arena.get_current_allocation_point();
+
+  int count = 0;
+  COREADDR start_of_gap = Payload(), end_of_gap = PayloadEnd();
+  uint64_t size = PayloadSize();
+  HeapObjectHeader header;
+  for (COREADDR header_address = start_of_gap;
+       size && header_address < end_of_gap;
+       ++count) {
+    header.load(header_address);
+    s << std::setw(4) << count << ' ';
+    header.dump_for_scan(s);
+
+    if (header_address == current_allocation_point) {
+      size = arena.get_remaining_allocation_size();
+      s << " # remaining size " << size;
+    }
+    else
+      size = header.size();
+    s << std::endl;
+
+    header_address += size;
+  }
+}
 
 class LargeObjectArena : public BaseArena {};
 
@@ -948,7 +965,8 @@ struct BlinkPageScanner {
 
   void load(COREADDR addr) {
     Object global_initializer;
-    page_.reset(blink::BasePage::create(addr));
+    page_.reset(blink::BasePage::create(
+      (addr & blink::kBlinkPageBaseMask) + blink::kBlinkGuardPageSize));
   }
 
   void dump(std::ostream &s) const {
