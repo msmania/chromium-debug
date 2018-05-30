@@ -88,6 +88,15 @@ public:
       << '-' << ptos(PayloadEnd(), buf2, sizeof(buf2)) << ']';
   }
 
+  void dump_for_arena(std::ostream &s) const {
+    CHAR buf1[20];
+    CHAR buf2[20];
+    CHAR buf3[20];
+    s << type() << ' ' << ptos(addr_, buf1, sizeof(buf1))
+      << " [" << ptos(Payload(), buf2, sizeof(buf2))
+      << '-' << ptos(PayloadEnd(), buf3, sizeof(buf3)) << ']';
+  }
+
   virtual uint64_t size() const = 0;
   COREADDR Arena() const { return arena_; }
   virtual COREADDR Payload() const = 0;
@@ -183,7 +192,9 @@ public:
     return GetAddress() + PageHeaderSize() + get_object_header_size();
   }
   uint64_t PayloadSize() const { return payload_size_; }
-  COREADDR PayloadEnd() const { return Payload() + PayloadSize(); }
+  COREADDR PayloadEnd() const {
+    return Payload() + PayloadSize() - get_object_header_size();
+  }
   uint64_t size() const override {
     return PageHeaderSize() + get_object_header_size() + payload_size_;
   }
@@ -318,7 +329,7 @@ public:
     std::unique_ptr<BasePage> page;
     for (COREADDR p = head; p; p = page->Next()) {
       page.reset(BasePage::create(p));
-      page->dump(s);
+      page->dump_for_arena(s);
       if (is_current_page(page->Payload(), page->PayloadEnd()))
         s << " #\n";
       else
@@ -332,7 +343,8 @@ public:
     s << ResolveType(addr_)
       << ' ' << ptos(addr_, buf1, sizeof(buf1)) << std::endl
       << "blink::ThreadHeap " << ptos(thread_state_.Heap(), buf2, sizeof(buf2))
-      << " Arena#" << index_ << "\nactive pages:\n";
+      << " Arena#" << index_ << std::endl;
+    s << "active pages:\n";
     dump_page_chain(s, first_page_);
     s << "unswept pages:\n";
     dump_page_chain(s, first_unswept_page_);
@@ -533,9 +545,15 @@ private:
 
   FreeList free_list_;
   COREADDR current_allocation_point_;
+  COREADDR remaining_allocation_size_;
+  COREADDR last_remaining_allocation_size_;
 
 public:
-  NormalPageArena() : current_allocation_point_(0) {}
+  NormalPageArena()
+    : current_allocation_point_(0),
+      remaining_allocation_size_(0),
+      last_remaining_allocation_size_(0)
+  {}
 
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
@@ -545,6 +563,8 @@ public:
       const char *field_name = nullptr;
       LOAD_FIELD_OFFSET("free_list_");
       LOAD_FIELD_OFFSET("current_allocation_point_");
+      LOAD_FIELD_OFFSET("remaining_allocation_size_");
+      LOAD_FIELD_OFFSET("last_remaining_allocation_size_");
     }
 
     char buf1[20];
@@ -554,16 +574,39 @@ public:
     if (addr_) {
       src = addr_ + offsets_["current_allocation_point_"];
       LOAD_MEMBER_POINTER(current_allocation_point_);
+      src = addr_ + offsets_["remaining_allocation_size_"];
+      LOAD_MEMBER_POINTER(remaining_allocation_size_);
+      src = addr_ + offsets_["last_remaining_allocation_size_"];
+      LOAD_MEMBER_POINTER(last_remaining_allocation_size_);
       free_list_.load(addr_ + offsets_["free_list_"]);
     }
     else {
       free_list_.load(0);
-      current_allocation_point_ = 0;
+      current_allocation_point_ = remaining_allocation_size_
+        = last_remaining_allocation_size_ = 0;
     }
   }
 
   virtual void dump(std::ostream &s) const {
-    BaseArena::dump(s);
+    char buf1[20];
+    char buf2[20];
+    char buf3[20];
+    s << ResolveType(addr_)
+      << ' ' << ptos(addr_, buf1, sizeof(buf1)) << std::endl
+      << "blink::ThreadHeap " << ptos(thread_state_.Heap(), buf2, sizeof(buf2))
+      << " Arena#" << index_ << std::endl
+      << "current_allocation_point       "
+      << ptos(current_allocation_point_, buf3, sizeof(buf3)) << std::endl
+      << "remaining_allocation_size      "
+      << remaining_allocation_size_ << std::endl
+      << "last_remaining_allocation_size "
+      << last_remaining_allocation_size_ << std::endl;
+
+    s << "active pages:\n";
+    dump_page_chain(s, first_page_);
+    s << "unswept pages:\n";
+    dump_page_chain(s, first_unswept_page_);
+
     s << "free chunks:\n";
     free_list_.dump(s);
   }
