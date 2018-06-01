@@ -104,16 +104,19 @@ template <typename T>
 static void dump_arg(PCSTR args) {
   const char delim[] = " ";
   char args_copy[1024];
+  COREADDR exp = 0;
   if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
     char *next_token = nullptr;
     if (auto token = strtok_s(args_copy, delim, &next_token)) {
-      T t;
-      t.load(GetExpression(token));
-      std::stringstream s;
-      t.dump(s);
-      dprintf(s.str().c_str());
+      exp = GetExpression(token);
     }
   }
+
+  T t;
+  t.load(exp);
+  std::stringstream s;
+  t.dump(s);
+  dprintf(s.str().c_str());
 }
 
 template <bool newline, typename T>
