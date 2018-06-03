@@ -79,14 +79,7 @@ public:
     }
   }
 
-  virtual void dump(std::ostream &s) const {
-    CHAR buf1[20];
-    CHAR buf2[20];
-    s << type() << ' ' << ptos(addr_, buf1, sizeof(buf1))
-      << " Arena " << ptos(Arena(), buf2, sizeof(buf2));
-    s << " [" << ptos(Payload(), buf1, sizeof(buf1))
-      << '-' << ptos(PayloadEnd(), buf2, sizeof(buf2)) << ']';
-  }
+  virtual void dump(std::ostream &s) const;
 
   void dump_for_arena(std::ostream &s) const {
     CHAR buf1[20];
@@ -283,6 +276,9 @@ public:
 
   BaseArena() : first_page_(0), index_(-1) {}
 
+  COREADDR GetThreadState() { return thread_state_.addr(); }
+  int ArenaIndex() const { return index_; }
+
   virtual bool is_current_page(COREADDR lower, COREADDR upper) const {
     return false;
   }
@@ -350,6 +346,23 @@ public:
     dump_page_chain(s, first_unswept_page_);
   }
 };
+
+void BasePage::dump(std::ostream &s) const {
+  CHAR buf1[20];
+  CHAR buf2[20];
+  CHAR buf3[20];
+  CHAR buf4[20];
+  CHAR buf5[20];
+  std::unique_ptr<blink::BaseArena> arena(blink::BaseArena::create(Arena()));
+  s << type() << ' ' << ptos(addr_, buf1, sizeof(buf1))
+    << " [" << ptos(Payload(), buf2, sizeof(buf2))
+    << '-' << ptos(PayloadEnd(), buf3, sizeof(buf3)) << ']'
+    << std::endl
+    << "Arena#" << arena->ArenaIndex() << ' ' << ptos(arena->addr(), buf4, sizeof(buf4))
+    << std::endl
+    << "ThreadState " << ptos(arena->GetThreadState(), buf5, sizeof(buf5))
+    << std::endl;
+}
 
 class HeapObjectHeader : public Object {
 private:
@@ -856,17 +869,113 @@ public:
   }
 };
 
+struct RegionTreeNode : Object {
+  static std::map<std::string, ULONG> offsets_;
+  PageMemoryRegion region_;
+  COREADDR left_;
+  COREADDR right_;
+
+  RegionTreeNode() : left_(0), right_(0) {}
+
+  void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type(target().engine());
+      type += "!blink::RegionTreeNode";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+
+      LOAD_FIELD_OFFSET("region_");
+      LOAD_FIELD_OFFSET("left_");
+      LOAD_FIELD_OFFSET("right_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr_) {
+      src = addr_ + offsets_["region_"];
+      LOAD_MEMBER_POINTER(addr);
+      region_.load(addr);
+      src = addr_ + offsets_["left_"];
+      LOAD_MEMBER_POINTER(left_);
+      src = addr_ + offsets_["right_"];
+      LOAD_MEMBER_POINTER(right_);
+    }
+    else {
+      left_ = right_ = 0;
+    }
+  }
+
+  void dump(std::ostream &s, int depth) const {
+    char buf1[20];
+    for (int i = 0; i < depth; ++i)
+      s << ' ';
+    s << ptos(region_.Base(), buf1, sizeof(buf1)) << std::endl;
+
+    RegionTreeNode child;
+    if (left_) {
+      child.load(left_);
+      child.dump(s, depth + 1);
+    }
+    if (right_) {
+      child.load(right_);
+      child.dump(s, depth + 1);
+    }
+  }
+};
+
+class RegionTree : Object {
+  static std::map<std::string, ULONG> offsets_;
+  COREADDR root_;
+
+public:
+  RegionTree() : root_(0) {}
+
+  void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type(target().engine());
+      type += "!blink::RegionTree";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+
+      LOAD_FIELD_OFFSET("root_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+    if (addr_) {
+      src = addr_ + offsets_["root_"];
+      LOAD_MEMBER_POINTER(root_);
+    }
+    else {
+      root_ = 0;
+    }
+  }
+
+  void dump(std::ostream &s) const {
+    if (root_) {
+      RegionTreeNode root;
+      root.load(root_);
+      root.dump(s, 1);
+    }
+  }
+};
+
 class ThreadHeap : public Object {
 private:
   static std::map<std::string, ULONG> offsets_;
   static int arena_count_;
 
+  RegionTree region_tree_;
   PagePool free_page_pool_;
   std::vector<COREADDR> arenas_;
 
 public:
-  ThreadHeap() {}
-
   void load(COREADDR addr) {
     const int pointer_size = target().is64bit_ ? 8 : 4;
     if (offsets_.size() == 0) {
@@ -876,6 +985,7 @@ public:
       ULONG offset = 0;
       const char *field_name = nullptr;
 
+      LOAD_FIELD_OFFSET("region_tree_");
       LOAD_FIELD_OFFSET("free_page_pool_");
 
       auto field = GetFieldInfo(type.c_str(), "arenas_");
@@ -897,11 +1007,15 @@ public:
         arena = addr;
         src += pointer_size;
       }
+      src = addr_ + offsets_["region_tree_"];
+      LOAD_MEMBER_POINTER(addr);
+      region_tree_.load(addr);
       src = addr_ + offsets_["free_page_pool_"];
       LOAD_MEMBER_POINTER(addr);
       free_page_pool_.load(addr, arena_count_);
     }
     else {
+      region_tree_.load(0);
       free_page_pool_.load(0, 0);
       arenas_.clear();
     }
@@ -918,6 +1032,8 @@ public:
     }
     s << "free page pool entries:" << std::endl;
     free_page_pool_.dump(s);
+    s << "region tree:" << std::endl;
+    region_tree_.dump(s);
   }
 };
 
@@ -935,6 +1051,8 @@ std::map<std::string, ULONG> NormalPageArena::offsets_;
 std::map<std::string, ULONG> PageMemory::offsets_;
 std::map<std::string, ULONG> MemoryRegion::offsets_;
 std::map<std::string, ULONG> PagePool::PoolEntry::offsets_;
+std::map<std::string, ULONG> RegionTreeNode::offsets_;
+std::map<std::string, ULONG> RegionTree::offsets_;
 std::map<std::string, ULONG> ThreadHeap::offsets_;
 int ThreadHeap::arena_count_ = 0;
 
@@ -952,12 +1070,36 @@ DECLARE_API(chunk) {
   dump_arg<blink::HeapObjectHeader>(args);
 }
 
+COREADDR get_arg(PCSTR args) {
+  const char delim[] = " ";
+  char args_copy[1024];
+  COREADDR exp = 0;
+  if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
+    char *next_token = nullptr;
+    if (auto token = strtok_s(args_copy, delim, &next_token)) {
+      exp = GetExpression(token);
+    }
+  }
+  return exp;
+}
+
 DECLARE_API(hpage) {
-  dump_arg_factory<true>(args, blink::BasePage::create);
+  Object global_initializer;
+  COREADDR addr = get_arg(args);
+  addr &= blink::kBlinkPageBaseMask;
+  addr += blink::kBlinkGuardPageSize;
+  std::unique_ptr<blink::BasePage> t(blink::BasePage::create(addr));
+  std::stringstream s;
+  t->dump(s);
+  dprintf(s.str().c_str());
 }
 
 DECLARE_API(arena) {
-  dump_arg_factory<false>(args, blink::BaseArena::create);
+  Object global_initializer;
+  std::unique_ptr<blink::BaseArena> t(blink::BaseArena::create(get_arg(args)));
+  std::stringstream s;
+  t->dump(s);
+  dprintf(s.str().c_str());
 }
 
 struct BlinkPageScanner {

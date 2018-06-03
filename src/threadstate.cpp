@@ -128,16 +128,28 @@ public:
   }
 
   void dump(std::ostream &s) const {
+    const int pointer_size = target().is64bit_ ? 8 : 4;
     char buf1[20];
     char buf2[20];
     PersistentNodeSlots slots;
+    int slot_index = 0;
     for (COREADDR p = slots_; p; ) {
+      s << "slot#" << (slot_index++) << ptos(p, buf1, sizeof(buf1)) << std::endl;
       slots.load(p);
       for (int i = 0; i < PersistentNodeSlots::kSlotCount; ++i) {
         const PersistentNode &node = slots.slot_[i];
         if (!node.IsUnused()) {
-          s << ptos(node.self_, buf1, sizeof(buf1))
-            << ' ' << ptos(node.trace_, buf2, sizeof(buf2)) << std::endl;
+          s << std::setw(4) << (i)
+            << ' ' << ptos(node.self_, buf1, sizeof(buf1))
+            << ' ' << ptos(node.trace_, buf2, sizeof(buf2));
+          COREADDR raw, node_addr;
+          if (ReadPointerEx(node.self_, raw)
+              && raw
+              && ReadPointerEx(node.self_ + pointer_size, node_addr)) {
+            s << ' ' << ptos(raw, buf1, sizeof(buf1))
+              << ' ' << ptos(node_addr, buf2, sizeof(buf2));
+          }
+          s << std::endl;
         }
       }
       p = slots.next_;
