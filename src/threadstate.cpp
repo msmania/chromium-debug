@@ -134,7 +134,8 @@ public:
     PersistentNodeSlots slots;
     int slot_index = 0;
     for (COREADDR p = slots_; p; ) {
-      s << "slot#" << (slot_index++) << ptos(p, buf1, sizeof(buf1)) << std::endl;
+      s << "slot#" << (slot_index++)
+        << ' ' << ptos(p, buf1, sizeof(buf1)) << std::endl;
       slots.load(p);
       for (int i = 0; i < PersistentNodeSlots::kSlotCount; ++i) {
         const PersistentNode &node = slots.slot_[i];

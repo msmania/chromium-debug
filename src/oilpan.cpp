@@ -5,6 +5,7 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <functional>
 #define KDEXT_64BIT
 #include <wdbgexts.h>
 #include "common.h"
@@ -94,7 +95,8 @@ public:
   COREADDR Arena() const { return arena_; }
   virtual COREADDR Payload() const = 0;
   virtual COREADDR PayloadEnd() const = 0;
-  virtual void scan(std::ostream &s) const = 0;
+  virtual void scan(std::ostream &s) const {}
+  virtual void scan_with_bitmap(std::ostream &s) const {}
 
   COREADDR GetAddress() const { return addr_; }
   const std::string &type() const { return type_; }
@@ -105,7 +107,78 @@ uint64_t BlinkPagePayloadSize() {
   return kBlinkPageSize - 2 * kBlinkGuardPageSize;
 }
 
+class ObjectStartBitmap : public Object {
+private:
+  static const size_t kCellSize = sizeof(uint8_t) * 8;
+  static const size_t kCellMask = sizeof(uint8_t) * 8 - 1;
+  static const size_t kBitmapSize =
+      (kBlinkPageSize + ((kCellSize * kAllocationGranularity) - 1)) /
+      (kCellSize * kAllocationGranularity);
+  static const size_t kReservedForBitmap =
+      ((kBitmapSize + kAllocationMask) & ~kAllocationMask);
+
+  static std::map<std::string, ULONG> offsets_;
+  COREADDR offset_;
+  uint8_t object_start_bit_map_[kReservedForBitmap];
+
+public:
+  ObjectStartBitmap() : offset_(0), object_start_bit_map_{}
+  {}
+
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::ObjectStartBitmap";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+
+      LOAD_FIELD_OFFSET("offset_");
+      LOAD_FIELD_OFFSET("object_start_bit_map_");
+    }
+
+    char buf1[20];
+    COREADDR src = 0;
+
+    addr_ = addr;
+
+    if (addr) {
+      src = addr_ + offsets_["offset_"];
+      LOAD_MEMBER_POINTER(offset_);
+
+      ULONG cb = 0;
+      src = addr_ + offsets_["object_start_bit_map_"];
+      if (!ReadMemory(src,
+                      object_start_bit_map_,
+                      sizeof(object_start_bit_map_),
+                      &cb)) {
+        dprintf("ERR> Failed to load an array at %s\n",
+                ptos(src, buf1, sizeof(buf1)));
+      }
+    }
+    else {
+      offset_ = 0;
+      memset(object_start_bit_map_, 0, sizeof(object_start_bit_map_));
+    }
+  }
+
+  void for_each(std::function<void(COREADDR)> cb) const {
+    for (int i = 0; i < kReservedForBitmap; ++i) {
+      for (int j = 0; j < kCellSize; ++j) {
+        if (object_start_bit_map_[i] & (1 << j)) {
+          uint32_t offset = (i * kCellSize + j) * kAllocationGranularity;
+          cb(offset_ + offset);
+        }
+      }
+    }
+  }
+};
+
 class NormalPage : public BasePage {
+private:
+  static std::map<std::string, ULONG> offsets_;
+  ObjectStartBitmap object_start_bit_map_;
+
 public:
   static uint32_t page_header_size;
   static uint64_t PageHeaderSize() {
@@ -122,6 +195,29 @@ public:
     return page_header_size + padding_size;
   }
 
+  virtual void load(COREADDR addr) {
+    if (offsets_.size() == 0) {
+      std::string type = target().engine();
+      type += "!blink::NormalPage";
+
+      ULONG offset = 0;
+      const char *field_name = nullptr;
+
+      LOAD_FIELD_OFFSET("object_start_bit_map_");
+    }
+
+    COREADDR src = addr;
+
+    BasePage::load(src);
+    if (addr_) {
+      src = addr_ + offsets_["object_start_bit_map_"];
+      object_start_bit_map_.load(src);
+    }
+    else {
+      object_start_bit_map_.load(0);
+    }
+  }
+
   COREADDR Payload() const { return GetAddress() + PageHeaderSize(); }
   uint64_t PayloadSize() const {
     return (BlinkPagePayloadSize() - PageHeaderSize()) & ~kAllocationMask;
@@ -130,6 +226,7 @@ public:
   uint64_t size() const override { return kBlinkPageSize; }
 
   virtual void scan(std::ostream &s) const;
+  virtual void scan_with_bitmap(std::ostream &s) const;
 };
 
 class LargeObjectPage : public BasePage {
@@ -191,8 +288,6 @@ public:
   uint64_t size() const override {
     return PageHeaderSize() + get_object_header_size() + payload_size_;
   }
-
-  virtual void scan(std::ostream &s) const {}
 };
 
 BasePage *BasePage::create(COREADDR addr) {
@@ -358,7 +453,8 @@ void BasePage::dump(std::ostream &s) const {
     << " [" << ptos(Payload(), buf2, sizeof(buf2))
     << '-' << ptos(PayloadEnd(), buf3, sizeof(buf3)) << ']'
     << std::endl
-    << "Arena#" << arena->ArenaIndex() << ' ' << ptos(arena->addr(), buf4, sizeof(buf4))
+    << "Arena#" << arena->ArenaIndex()
+    << ' ' << ptos(arena->addr(), buf4, sizeof(buf4))
     << std::endl
     << "ThreadState " << ptos(arena->GetThreadState(), buf5, sizeof(buf5))
     << std::endl;
@@ -645,6 +741,17 @@ void NormalPage::scan(std::ostream &s) const {
 
     header_address += size;
   }
+}
+
+void NormalPage::scan_with_bitmap(std::ostream &s) const {
+  HeapObjectHeader header;
+  int count = 0;
+  object_start_bit_map_.for_each([&](COREADDR addr) {
+    header.load(addr);
+    s << std::setw(4) << (count++) << ' ';
+    header.dump_for_scan(s);
+    s << std::endl;
+  });
 }
 
 class LargeObjectArena : public BaseArena {};
@@ -1045,6 +1152,8 @@ std::map<std::string, ULONG> HeapObjectHeader::offsets_;
 std::map<std::string, ULONG> FreeListEntry::offsets_;
 std::map<std::string, ULONG> FreeList::offsets_;
 std::map<std::string, ULONG> BasePage::offsets_;
+std::map<std::string, ULONG> ObjectStartBitmap::offsets_;
+std::map<std::string, ULONG> NormalPage::offsets_;
 std::map<std::string, ULONG> ThreadState::offsets_;
 std::map<std::string, ULONG> BaseArena::offsets_;
 std::map<std::string, ULONG> NormalPageArena::offsets_;
@@ -1111,11 +1220,33 @@ struct BlinkPageScanner {
       (addr & blink::kBlinkPageBaseMask) + blink::kBlinkGuardPageSize));
   }
 
-  void dump(std::ostream &s) const {
-    if (page_) page_->scan(s);
+  void dump(std::ostream &s, bool use_bitmap) const {
+    if (page_) {
+      if (use_bitmap) page_->scan_with_bitmap(s);
+      else page_->scan(s);
+    }
   }
 };
 
 DECLARE_API(scan) {
-  dump_arg<BlinkPageScanner>(args);
+  bool use_bitmap = false;
+  COREADDR exp = 0;
+
+  char args_copy[1024];
+  if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
+    char *token = strtok(args_copy, " ");
+    while (token) {
+      if (strcmp(token, "-bitmap") == 0)
+        use_bitmap = true;
+      else
+        exp = GetExpression(token);
+      token = strtok(nullptr, " ");
+    }
+  }
+
+  BlinkPageScanner t;
+  t.load(exp);
+  std::stringstream s;
+  t.dump(s, use_bitmap);
+  dprintf(s.str().c_str());
 }
