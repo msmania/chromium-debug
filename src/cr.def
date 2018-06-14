@@ -6,12 +6,17 @@ EXPORTS
 	arena
 	bucket
 	buffer_allocator
+	chunk
 	dom
 	fast_malloc_allocator
 	heap
+	hpage
 	lay
 	layout_allocator
-	page
+	persistent
+	ppage
+	pool
+	scan
 	slot
 	spage
 	ts

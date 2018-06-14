@@ -79,6 +79,7 @@ DECLARE_API(help) {
   dprintf(
     "\n# DOM\n"
     "!dom <Node*>         - Dump DOM tree\n"
+
     "\n# Layout\n"
     "!lay <LayoutObject*> - Dump Layout tree\n"
     "\n# PartitionAlloc\n"
@@ -87,9 +88,20 @@ DECLARE_API(help) {
     "!buffer_allocator [-buckets] [address]\n"
     "!layout_allocator [-buckets] [address]\n"
     "!bucket <address>\n"
-    "!page <address>\n"
+    "!ppage <address>\n"
     "!slot <address>\n"
     "!spage <address>\n"
+
+    "\n# Oilpan\n"
+    "!ts [address]\n"
+    "!persistent <address>\n"
+    "!heap <address>\n"
+    "!pool <address>\n"
+    "!arena <address>\n"
+    "!hpage <address>\n"
+    "!scan [-bitmap] <address>\n"
+    "!chunk <address>\n"
+
     "\n# Friendly info :)\n\n"
     "Symbol server:\n"
     "https://chromium-browser-symsrv.commondatastorage.googleapis.com\n\n"

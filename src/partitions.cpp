@@ -840,23 +840,7 @@ DECLARE_API(layout_allocator) {
     std::string("!WTF::Partitions::layout_allocator_"));
 }
 
-template <typename T>
-void dump_arg(PCSTR args) {
-  const char delim[] = " ";
-  char args_copy[1024];
-  if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
-    char *next_token = nullptr;
-    if (auto token = strtok_s(args_copy, delim, &next_token)) {
-      T t;
-      t.load(GetExpression(token));
-      std::stringstream s;
-      t.dump(s);
-      dprintf(s.str().c_str());
-    }
-  }
-}
-
-DECLARE_API(page) {
+DECLARE_API(ppage) {
   dump_arg<base::PartitionPage>(args);
 }
 
