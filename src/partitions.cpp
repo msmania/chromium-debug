@@ -32,12 +32,12 @@ class Global : Object {
 public:
   static COREADDR get_sentinel_page() {
     if (!g_sentinel_page)
-      g_sentinel_page = get_expression("!g_sentinel_page");
+      g_sentinel_page = get_expression("!base::internal::PartitionPage::sentinel_page_");
     return g_sentinel_page;
   }
   static COREADDR get_sentinel_bucket() {
     if (!g_sentinel_bucket)
-      g_sentinel_bucket = get_expression("!g_sentinel_bucket");
+      g_sentinel_bucket = get_expression("!base::internal::PartitionBucket::sentinel_bucket_");
     return g_sentinel_bucket;
   }
 };
@@ -63,7 +63,7 @@ public:
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
       std::string type = target().engine();
-      type += "!base::PartitionSuperPageExtentEntry";
+      type += "!base::internal::PartitionSuperPageExtentEntry";
 
       ULONG offset = 0;
       const char *field_name = nullptr;
@@ -111,7 +111,7 @@ struct PartitionDirectMapExtent : Object {
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
       std::string type = target().engine();
-      type += "!base::PartitionDirectMapExtent";
+      type += "!base::internal::PartitionDirectMapExtent";
 
       ULONG offset = 0;
       const char *field_name = nullptr;
@@ -162,7 +162,7 @@ public:
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
       std::string type = target().engine();
-      type += "!base::PartitionFreelistEntry";
+      type += "!base::internal::PartitionFreelistEntry";
 
       ULONG offset = 0;
       const char *field_name = nullptr;
@@ -214,7 +214,7 @@ public:
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
       std::string type = target().engine();
-      type += "!base::PartitionPage";
+      type += "!base::internal::PartitionPage";
 
       ULONG offset = 0;
       const char *field_name = nullptr;
@@ -379,7 +379,7 @@ public:
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
       std::string type = target().engine();
-      type += "!base::PartitionBucket";
+      type += "!base::internal::PartitionBucket";
 
       ULONG offset = 0;
       const char *field_name = nullptr;
@@ -513,7 +513,7 @@ public:
   virtual void load(COREADDR addr) {
     if (offsets_.size() == 0) {
       std::string type = target().engine();
-      type += "!base::PartitionRootBase";
+      type += "!base::internal::PartitionRootBase";
 
       ULONG offset = 0;
       const char *field_name = nullptr;
