@@ -144,6 +144,8 @@ public:
 class LayoutText : public LayoutObject {};
 class LayoutTextFragment : public LayoutText {};
 class LayoutWordBreak : public LayoutText {};
+class LayoutBR : public LayoutText {};
+class LayoutNGText : public LayoutText {};
 class LayoutBoxModelObject : public LayoutObject {};
 class LayoutBox : public LayoutBoxModelObject {};
 class LayoutListMarker : public LayoutBox {};
@@ -241,6 +243,7 @@ class LayoutView : public LayoutBlockFlow {};
 class LayoutListItem : public LayoutBlockFlow {};
 class LayoutTable : public LayoutBlock {};
 class LayoutTableCell : public LayoutBlockFlow {};
+class LayoutNGTableCell : public LayoutTableCell {};
 class LayoutTextControlInnerEditor : public LayoutBlockFlow {};
 class LayoutTextControl : public LayoutBlockFlow {};
 class LayoutTextControlMultiLine : public LayoutTextControl {};
@@ -248,6 +251,8 @@ class LayoutTextControlSingleLine : public LayoutTextControl {};
 class LayoutFlexibleBox : public LayoutBlock {};
 class LayoutButton : public LayoutFlexibleBox {};
 class LayoutFileUploadControl : public LayoutBlockFlow {};
+class LayoutNGBlockFlow : public LayoutBlockFlow {};
+class LayoutNGListItem : public LayoutNGBlockFlow {};
 
 class LayoutTableBoxComponent : public LayoutBox {
 private:
@@ -308,6 +313,8 @@ std::unique_ptr<LayoutObject> LayoutObject::CreateNode(COREADDR addr) {
                            blink::LayoutBlock);
     ADD_CTOR(LayoutObject, blink::LayoutBlockFlow,
                            blink::LayoutBlockFlow);
+    ADD_CTOR(LayoutObject, blink::LayoutBR,
+                           blink::LayoutBR);
     ADD_CTOR(LayoutObject, blink::LayoutButton,
                            blink::LayoutButton);
     ADD_CTOR(LayoutObject, blink::LayoutFileUploadControl,
@@ -324,6 +331,14 @@ std::unique_ptr<LayoutObject> LayoutObject::CreateNode(COREADDR addr) {
                            blink::LayoutListItem);
     ADD_CTOR(LayoutObject, blink::LayoutListMarker,
                            blink::LayoutListMarker);
+    ADD_CTOR(LayoutObject, blink::LayoutNGBlockFlow,
+                           blink::LayoutNGBlockFlow);
+    ADD_CTOR(LayoutObject, blink::LayoutNGListItem,
+                           blink::LayoutNGListItem);
+    ADD_CTOR(LayoutObject, blink::LayoutNGTableCell,
+                           blink::LayoutNGTableCell);
+    ADD_CTOR(LayoutObject, blink::LayoutNGText,
+                           blink::LayoutNGText);
     ADD_CTOR(LayoutObject, blink::LayoutTable,
                            blink::LayoutTable);
     ADD_CTOR(LayoutObject, blink::LayoutTableCell,
