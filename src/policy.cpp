@@ -124,6 +124,49 @@ class SandboxPolicies {
     }
   };
 
+  static const char *GetName(uint32_t tag) {
+    static const char *Names[] = {
+      "UNUSED",
+      "PING1",
+      "PING2",
+      "NTCREATEFILE",
+      "NTOPENFILE",
+      "NTQUERYATTRIBUTESFILE",
+      "NTQUERYFULLATTRIBUTESFILE",
+      "NTSETINFO_RENAME",
+      "CREATENAMEDPIPEW",
+      "NTOPENTHREAD",
+      "NTOPENPROCESS",
+      "NTOPENPROCESSTOKEN",
+      "NTOPENPROCESSTOKENEX",
+      "CREATEPROCESSW",
+      "CREATEEVENT",
+      "OPENEVENT",
+      "NTCREATEKEY",
+      "NTOPENKEY",
+      "GDI_GDIDLLINITIALIZE",
+      "GDI_GETSTOCKOBJECT",
+      "USER_REGISTERCLASSW",
+      "CREATETHREAD",
+      "USER_ENUMDISPLAYMONITORS",
+      "USER_ENUMDISPLAYDEVICES",
+      "USER_GETMONITORINFO",
+      "GDI_CREATEOPMPROTECTEDOUTPUTS",
+      "GDI_GETCERTIFICATE",
+      "GDI_GETCERTIFICATESIZE",
+      "GDI_DESTROYOPMPROTECTEDOUTPUT",
+      "GDI_CONFIGUREOPMPROTECTEDOUTPUT",
+      "GDI_GETOPMINFORMATION",
+      "GDI_GETOPMRANDOMNUMBER",
+      "GDI_GETSUGGESTEDOPMPROTECTEDOUTPUTARRAYSIZE",
+      "GDI_SETOPMSIGNINGKEYANDSEQUENCENUMBERS",
+      "NTCREATESECTION",
+      "LAST",
+    };
+    return Names[tag];
+  }
+
+
   class Policy {
     uint32_t num_opcodes_;
     address_t policies_;
@@ -180,9 +223,8 @@ public:
 
     std::stringstream s;
     policy.Dump(s);
-    dprintf("\nPolicy#%d\n"
-            "%s",
-            index,
+    dprintf("\nPolicy.%s\n%s",
+            GetName(index),
             s.str().c_str());
   }
 
