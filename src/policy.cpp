@@ -83,8 +83,35 @@ class SandboxPolicies {
       return ret;
     }
 
+    static std::string OpcodeOption(int val) {
+      constexpr uint32_t kPolNegateEval = 1;
+      constexpr uint32_t kPolClearContext = 2;
+      constexpr uint32_t kPolUseOREval = 4;
+
+      std::string s;
+      if (val & kPolNegateEval) {
+        s += "kPolNegateEval";
+        val &= ~kPolNegateEval;
+        if (val) s += '|';
+      }
+      if (val & kPolClearContext) {
+        s += "kPolClearContext";
+        val &= ~kPolClearContext;
+        if (val) s += '|';
+      }
+      if (val & kPolUseOREval) {
+        s += "kPolUseOREval";
+        val &= ~kPolNegateEval;
+        if (val) s += '|';
+      }
+      if (val || s.size() == 0) {
+        s += std::to_string(val);
+      }
+      return s;
+    }
+
     void Dump(std::ostream &s) const {
-      s << GetName(id_) << ' ' << param_ << ' ' << options_;
+      s << GetName(id_) << " arg" << param_ << ' ' << OpcodeOption(options_);
 
       if (id_ == OP_WSTRING_MATCH) {
         constexpr int kSeekToEnd = 0xfffff;
