@@ -2,21 +2,22 @@ EXPORTS
 	WinDbgExtensionDllInit
 	ExtensionApiVersion
 	help
-	array_buffer_allocator
-	arena
-	bucket
-	buffer_allocator
-	chunk
-	dom
-	fast_malloc_allocator
-	heap
-	hpage
-	lay
-	layout_allocator
-	persistent
-	ppage
-	pool
-	scan
-	slot
-	spage
-	ts
+	runtests
+;	array_buffer_allocator
+;	arena
+;	bucket
+;	buffer_allocator
+;	chunk
+;	dom
+;	fast_malloc_allocator
+;	heap
+;	hpage
+;	lay
+;	layout_allocator
+;	persistent
+;	ppage
+;	pool
+;	scan
+;	slot
+;	spage
+;	ts

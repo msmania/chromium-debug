@@ -1,120 +1,63 @@
-#define LOAD_FIELD_OFFSET(FIELD) \
-  field_name = FIELD; \
-  if (GetFieldOffset(type.c_str(), field_name, &offset) == 0) { \
-    offsets_[field_name] = offset; \
-  } \
-  else { \
-    dprintf("ERR> Symbol not found: %s::%s\n", type.c_str(), field_name); \
-  }
+#pragma once
 
-#define LOAD_MEMBER_POINTER(MEMBER) \
-  if (!ReadPointerEx(src, MEMBER)) { \
-    dprintf("ERR> Failed to load a pointer at %s\n", \
-            ptos(src, buf1, sizeof(buf1))); \
-  }
+#include <cstdint>
+#include <vector>
+#include <string>
+#include <iostream>
 
-#define LOAD_MEMBER_VALUE(MEMBER) \
-  if (!ReadValue(src, MEMBER)) { \
-    dprintf("ERR> Failed to load a value at %s\n", \
-            ptos(src, buf1, sizeof(buf1))); \
-  }
+typedef uint64_t address_t;
 
-#define ADD_CTOR(BASE, KEY, CLASS) \
-  ctors[#KEY] = []() -> BASE* {return new CLASS();}
-
-typedef ULONG64 COREADDR;
-
-LPCSTR ptos(ULONG64 p, LPSTR s, ULONG len);
-FIELD_INFO GetFieldInfo(IN LPCSTR Type, IN LPCSTR Field);
-const std::string &ResolveType(COREADDR addr);
-
-class CPEImage {
-private:
-  ULONG64 imagebase_;
-  WORD platform_;
-  IMAGE_DATA_DIRECTORY resource_dir_;
-  IMAGE_DATA_DIRECTORY import_dir_;
-
-  // https://msdn.microsoft.com/en-us/library/windows/desktop/ms647001(v=vs.85).aspx
-  struct VS_VERSIONINFO {
-    WORD wLength;
-    WORD wValueLength;
-    WORD wType;
-    WCHAR szKey[16]; // L"VS_VERSION_INFO"
-    VS_FIXEDFILEINFO Value;
-  } version_;
-
-  bool Initialize(ULONG64 ImageBase);
-  ULONG ReadPointerEx(ULONG64 Address, PULONG64 Pointer) const;
+class address_string {
+  char buffer_[20];
 
 public:
-  CPEImage(ULONG64 ImageBase);
-  virtual ~CPEImage();
-
-  bool IsInitialized() const;
-  bool Is64bit() const;
-  bool LoadVersion();
-  WORD GetPlatform() const;
-  void GetVersion(PDWORD FileVersionMS,
-                  PDWORD FileVersionLS,
-                  PDWORD ProductVersionMS,
-                  PDWORD ProductVersionLS) const;
-  void DumpImportTable(LPCSTR DllName) const;
+  address_string(address_t addr);
+  operator const char *() const;
 };
 
-struct TARGETINFO {
-  std::string engine_;
-  bool is64bit_;
-  WORD version_;
-  WORD buildnum_;
-
-  TARGETINFO();
-  const char *engine() const;
+struct target_info {
+  uint32_t actualProcessorType{};
+  uint32_t effectiveProcessorType{};
+  static const target_info &get();
+  void init();
 };
 
-class Object {
-private:
-  static TARGETINFO targetinfo_;
+std::vector<std::string> get_args(const char *args);
+uint32_t get_field_offset(const char *type, const char *field);
+FIELD_INFO get_field_info(const char *type, const char *field);
+uint32_t get_field_info_with_module(const char *type, const char *field);
+address_t load_pointer(address_t addr);
+void DumpAddressAndSymbol(std::ostream &s, address_t addr);
+const char *ptos(uint64_t p, char *s, uint32_t len);
+void Log(const wchar_t* format, ...);
 
+class debug_object {
 protected:
-  COREADDR addr_;
+  address_t base_{};
 
 public:
-  static COREADDR get_expression(const char *symbol);
-  static void InitializeTargetInfo();
-  static const TARGETINFO &target();
-  static bool ReadPointerEx(ULONG64 address, ULONG64 &pointer);
-  static COREADDR deref(ULONG64 address);
-
-  template<typename T>
-  static bool ReadValue(ULONG64 address, T &pointer) {
-    pointer = static_cast<T>(0);
-    ULONG cb = 0;
-    if (ReadMemory(address, &pointer, sizeof(T), &cb)) {
-      return true;
-    }
-    return false;
-  }
-
-  Object();
-  COREADDR addr() const { return addr_; }
+  virtual void load(address_t addr) = 0;
+  virtual void dump(std::ostream &s) const;
+  address_t addr() const { return base_; }
 };
 
 template <typename T>
-static void dump_arg(PCSTR args) {
-  const char delim[] = " ";
-  char args_copy[1024];
-  COREADDR exp = 0;
-  if (args && strcpy_s(args_copy, sizeof(args_copy), args) == 0) {
-    char *next_token = nullptr;
-    if (auto token = strtok_s(args_copy, delim, &next_token)) {
-      exp = GetExpression(token);
-    }
-  }
-
+void dump_object(address_t addr) {
   T t;
-  t.load(exp);
-  std::stringstream s;
-  t.dump(s);
-  dprintf(s.str().c_str());
+  t.load(addr);
+  std::stringstream ss;
+  t.dump(ss);
+  dprintf("%s\n", ss.str().c_str());
+}
+
+template<typename T>
+T load_data(address_t addr) {
+  T data{};
+  ULONG cb = 0;
+  if (ReadMemory(addr, &data, sizeof(T), &cb) == 0
+      || cb != sizeof(T)) {
+    address_string s(addr);
+    Log(L"Failed to load a pointer from %hs\n", s);
+  }
+  return data;
 }

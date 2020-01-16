@@ -15,17 +15,21 @@ LINKER=link
 TARGET=cr.dll
 
 OBJS=\
+	$(OBJDIR)\common.obj\
 	$(OBJDIR)\dllmain.obj\
-	$(OBJDIR)\dom.obj\
-	$(OBJDIR)\layout.obj\
-	$(OBJDIR)\object.obj\
-	$(OBJDIR)\oilpan.obj\
-	$(OBJDIR)\partitions.obj\
+#	$(OBJDIR)\dom.obj\
+#	$(OBJDIR)\layout.obj\
+#	$(OBJDIR)\object.obj\
+#	$(OBJDIR)\oilpan.obj\
+#	$(OBJDIR)\partitions.obj\
 	$(OBJDIR)\peimage.obj\
-	$(OBJDIR)\threadstate.obj\
-	$(OBJDIR)\typeinfo.obj\
+	$(OBJDIR)\symbol_manager.obj\
+#	$(OBJDIR)\threadstate.obj\
+#	$(OBJDIR)\typeinfo.obj\
+	$(OBJDIR)\vtable_manager.obj\
 
 LIBS=\
+	dbgeng.lib\
 
 # warning C4100: unreferenced formal parameter
 CFLAGS=\
@@ -39,6 +43,7 @@ CFLAGS=\
 	/W4\
 	/wd4100\
 	/D_CRT_SECURE_NO_WARNINGS\
+	/DUNICODE\
 
 LFLAGS=\
 	/NOLOGO\
