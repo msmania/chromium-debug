@@ -15,6 +15,7 @@ EXPORTS
 ;	lay
 ;	layout_allocator
 ;	persistent
+	pol
 ;	ppage
 ;	pool
 ;	scan

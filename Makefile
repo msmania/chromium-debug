@@ -23,6 +23,7 @@ OBJS=\
 #	$(OBJDIR)\oilpan.obj\
 #	$(OBJDIR)\partitions.obj\
 	$(OBJDIR)\peimage.obj\
+	$(OBJDIR)\policy.obj\
 	$(OBJDIR)\symbol_manager.obj\
 #	$(OBJDIR)\threadstate.obj\
 #	$(OBJDIR)\typeinfo.obj\
