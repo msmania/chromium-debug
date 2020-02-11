@@ -16,7 +16,8 @@ class SandboxPolicies {
     static const size_t kArgumentCount = 4;
 
     address_t base_;
-    uint32_t id_, param_, options_;
+    uint32_t id_, options_;
+    int16_t param_;
     address_t args_[kArgumentCount];
 
   public:
@@ -46,7 +47,7 @@ class SandboxPolicies {
       return Names[min(id, OP_LAST)];
     }
 
-    OpCode(address_t base) : base_(base), id_{}, param_{}, options_{} {
+    OpCode(address_t base) : base_(base), id_{}, options_{}, param_{} {
       static const auto offsetId =
         get_field_offset("chrome_exe!sandbox::PolicyOpcode", "opcode_id");
       static const auto offsetParam =
@@ -57,8 +58,8 @@ class SandboxPolicies {
         get_field_offset("chrome_exe!sandbox::PolicyOpcode", "arguments_");
 
       id_ = load_data<uint32_t>(base + offsetId);
-      param_ = load_data<uint32_t>(base + offsetParam);
       options_ = load_data<uint32_t>(base + offsetOpt);
+      param_ = load_data<int16_t>(base + offsetParam);
       for (size_t i = 0; i < kArgumentCount; ++i) {
         args_[i] = load_pointer(base + offsetArgs + gPointerSize * i);
       }
