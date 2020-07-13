@@ -55,6 +55,9 @@ DECLARE_API(help) {
     "!scan [-bitmap] <address>\n"
     "!chunk <address>\n"
 
+    "\n# Sandbox\n"
+    "!pol [PolicyGlobal]\n"
+
     "\n# Friendly info :)\n\n"
     "Symbol server:\n"
     "https://chromium-browser-symsrv.commondatastorage.googleapis.com\n\n"

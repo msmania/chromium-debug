@@ -97,7 +97,7 @@ public:
   }
 };
 
-symbol_manager smanager;
+symbol_manager smanager("chrome_exe");
 
 uint32_t get_field_offset(const char *type, const char *field) {
   return smanager.get_field_offset(type, field);

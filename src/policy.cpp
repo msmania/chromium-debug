@@ -49,13 +49,13 @@ class SandboxPolicies {
 
     OpCode(address_t base) : base_(base), id_{}, options_{}, param_{} {
       static const auto offsetId =
-        get_field_offset("chrome_exe!sandbox::PolicyOpcode", "opcode_id");
+        get_field_offset("sandbox::PolicyOpcode", "opcode_id");
       static const auto offsetParam =
-        get_field_offset("chrome_exe!sandbox::PolicyOpcode", "parameter_");
+        get_field_offset("sandbox::PolicyOpcode", "parameter_");
       static const auto offsetOpt =
-        get_field_offset("chrome_exe!sandbox::PolicyOpcode", "options_");
+        get_field_offset("sandbox::PolicyOpcode", "options_");
       static const auto offsetArgs =
-        get_field_offset("chrome_exe!sandbox::PolicyOpcode", "arguments_");
+        get_field_offset("sandbox::PolicyOpcode", "arguments_");
 
       id_ = load_data<uint32_t>(base + offsetId);
       options_ = load_data<uint32_t>(base + offsetOpt);
@@ -172,6 +172,7 @@ class SandboxPolicies {
       "OPENEVENT",
       "NTCREATEKEY",
       "NTOPENKEY",
+//      "DUPLICATEHANDLEPROXY",
       "GDI_GDIDLLINITIALIZE",
       "GDI_GETSTOCKOBJECT",
       "USER_REGISTERCLASSW",
@@ -203,7 +204,7 @@ class SandboxPolicies {
   public:
     Policy(address_t base) : num_opcodes_(0) {
       static const auto opcodesField =
-        get_field_info("chrome_exe!sandbox::PolicyBuffer", "opcodes");
+        get_field_info("sandbox::PolicyBuffer", "opcodes");
 
       num_opcodes_ = load_data<uint32_t>(base);
       policies_ = base + opcodesField.FieldOffset;
@@ -231,7 +232,7 @@ class SandboxPolicies {
 public:
   SandboxPolicies(address_t addr) : base_(addr), num_items_{}, data_size_{} {
     static const auto offsetDataSize =
-      get_field_offset("chrome_exe!sandbox::PolicyGlobal", "data_size");
+      get_field_offset("sandbox::PolicyGlobal", "data_size");
     num_items_ = offsetDataSize / gPointerSize;
     data_size_ = load_data<uint32_t>(base_ + offsetDataSize);
   }
@@ -264,21 +265,24 @@ public:
 };
 
 DECLARE_API(pol) {
-  static address_t policy_addr =
-    GetExpression("chrome_exe!g_shared_policy_memory");
+  address_t policy_base = 0;
 
-  auto policy_base = load_pointer(policy_addr);
+  const auto vargs = get_args(args);
+  if (vargs.size() == 0) {
+    address_t policy_addr =
+      GetExpression("chrome_exe!sandbox::g_shared_policy_memory");
+    policy_base = load_pointer(policy_addr);
 
-  address_string s1(policy_addr), s2(policy_base);
-  dprintf("chrome_exe!g_shared_policy_memory = *%s = %s\n",
-          s1, s2);
+    address_string s1(policy_addr), s2(policy_base);
+    dprintf("g_shared_policy_memory = *%s = %s\n",
+            s1, s2);
+  }
+  else {
+    policy_base = GetExpression(vargs[0].c_str());
+  }
 
   if (!policy_base) return;
 
   SandboxPolicies policies(policy_base);
-  const auto vargs = get_args(args);
-  if (vargs.size() == 0)
-    policies.DumpAll();
-  else
-    policies.Dump(static_cast<uint32_t>(GetExpression(vargs[0].c_str())));
+  policies.DumpAll();
 }
